@@ -1,0 +1,449 @@
+{% extends "akabat_app/base_wizard.html" %}
+{% load static %}
+
+{% block title %}Akabat - Graphical Analysis{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4">
+  <!-- Title + info button -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold">{{ step_title }}</h2>
+    <button class="btn btn-light border rounded-circle shadow-sm" data-bs-toggle="modal" data-bs-target="#helpModal" title="Graph Info">
+      <i class="bi bi-info-circle" style="font-size: 1.4rem; color: #444;"></i>
+    </button>
+  </div>
+
+  <!-- Plotly script -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+  <!-- Graphs blocks -->
+  <div class="row gx-3 gy-4 mb-4">
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h5 class="fw-bold text-center">🌍 Geographical Graphs</h5>
+          {% for g in graphs_with_info %}
+            {% if g.group == "geo" %}
+              <button class="btn btn-outline-primary w-100 mb-2 text-start" data-graph-name="{{ g.name }}">{{ g.title }}</button>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h5 class="fw-bold text-center">📊 Time Evolution Graphs</h5>
+          {% for g in graphs_with_info %}
+            {% if g.group == "time" %}
+              <button class="btn btn-outline-warning w-100 mb-2 text-start" data-graph-name="{{ g.name }}">{{ g.title }}</button>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h5 class="fw-bold text-center">👥 Author Graphs</h5>
+          {% for g in graphs_with_info %}
+            {% if g.group == "author" %}
+              <button class="btn btn-outline-success w-100 mb-2 text-start" data-graph-name="{{ g.name }}">{{ g.title }}</button>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h5 class="fw-bold text-center">🔑 Keyword Graphs</h5>
+          {% for g in graphs_with_info %}
+            {% if g.group == "keywords" %}
+              <button class="btn btn-outline-secondary w-100 mb-2 text-start" data-graph-name="{{ g.name }}">{{ g.title }}</button>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="d-flex flex-column align-items-start">
+    <div id="threshold-container" class="mb-4 d-none p-3 bg-light border rounded shadow-sm" style="max-width: 500px;">
+      <label for="citation-threshold" class="form-label fw-bold">🔍 Filter by normalized citations:</label>
+      <div class="d-flex align-items-center">
+        <input type="range" class="form-range me-3 flex-grow-1" id="citation-threshold" min="0" max="1" step="0.01" value="0">
+        <span id="threshold-value" class="text-muted small" style="min-width: 80px;">Current: ≥ 0.00</span>
+      </div>
+    </div>
+
+    <div id="topn-container" class="mb-4 d-none p-3 bg-light border rounded shadow-sm" style="max-width: 500px;">
+      <label for="topn-keywords" class="form-label fw-bold">🔢 Filter: Show top keywords per cluster</label>
+      <div class="d-flex align-items-center">
+        <input type="range" class="form-range me-3 flex-grow-1" id="topn-keywords" min="1" max="50" step="1" value="10">
+        <span id="topn-value" class="text-muted small" style="min-width: 80px;">Current: 10</span>
+      </div>
+    </div>
+
+    <div id="freq-container" class="mb-4 d-none p-3 bg-light border rounded shadow-sm" style="max-width: 500px;">
+      <label for="frequency-threshold" class="form-label fw-bold">🔍 Filter keywords by minimum frequency:</label>
+      <div class="d-flex align-items-center">
+        <input type="range" class="form-range me-3 flex-grow-1" id="frequency-threshold" min="0" max="30" step="1" value="0">
+        <span id="freq-value" class="text-muted small" style="min-width: 80px;">Min: ≥ 0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- General filters -->
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+
+<div class="position-relative mb-4">
+  <button class="btn btn-outline-dark d-flex align-items-center gap-2" id="toggle-filters">
+    <i class="bi bi-funnel"></i> Filters
+  </button>
+
+  <div id="filter-panel" class="bg-light border rounded shadow-sm p-4 mt-2" style="display: none; max-width: 1000px;">
+    <div class="row g-4">
+
+      <div class="col-md-4">
+        <label for="select-years" class="form-label fw-bold">Years</label>
+        <select id="select-years" multiple placeholder="Select years..."></select>
+      </div>
+
+      <div class="col-md-4">
+        <label for="select-keywords" class="form-label fw-bold">Keywords</label>
+        <select id="select-keywords" multiple placeholder="Select keywords..."></select>
+      </div>
+
+      <div class="col-md-4">
+        <label for="select-keyword-groups" class="form-label fw-bold">Keyword Groups</label>
+        <select id="select-keyword-groups" multiple placeholder="Select keyword groups..."></select>
+      </div>
+
+      <div class="col-md-4">
+        <label for="select-authors" class="form-label fw-bold">Authors</label>
+        <select id="select-authors" multiple placeholder="Select authors..."></select>
+      </div>
+
+      <div class="col-md-4">
+        <label for="select-author-groups" class="form-label fw-bold">Author Groups</label>
+        <select id="select-author-groups" multiple placeholder="Select author groups..."></select>
+      </div>
+
+      <div class="col-md-4 d-flex align-items-end">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="toggle-legend" checked>
+          <label class="form-check-label" for="toggle-legend">Show legend</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-4 text-end">
+      <button class="btn btn-primary" id="apply-filters">Apply Filters</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const filterPanel = document.getElementById("filter-panel");
+  const toggleFiltersBtn = document.getElementById("toggle-filters");
+  const toggleLegend = document.getElementById("toggle-legend");
+  const applyBtn = document.getElementById("apply-filters");
+  let plotId = null;
+
+  toggleFiltersBtn.addEventListener("click", () => {
+    filterPanel.style.display = (filterPanel.style.display === "none") ? "block" : "none";
+  });
+
+  toggleLegend.addEventListener("change", function () {
+    if (plotId) {
+      Plotly.relayout(plotId, { showlegend: this.checked });
+    }
+  });
+
+  window.setFilterPlotId = function (id) {
+    plotId = id;
+  }
+
+  window.getGeneralFiltersQuery = function () {
+    const getValues = (id) => {
+      const el = document.getElementById(id);
+      return el && el.tomselect ? el.tomselect.getValue() : [];
+    };
+    const toQuery = (key, values) => values.length ? `&${key}=${encodeURIComponent(values.join(","))}` : "";
+
+    return [
+      toQuery("years", getValues("select-years")),
+      toQuery("keywords", getValues("select-keywords")),
+      toQuery("keyword_groups", getValues("select-keyword-groups")),
+      toQuery("authors", getValues("select-authors")),
+      toQuery("author_groups", getValues("select-author-groups")),
+      `&showlegend=${toggleLegend.checked ? 1 : 0}`
+    ].join("");
+  };
+
+  applyBtn.addEventListener("click", () => {
+    const activeBtn = document.querySelector("button[data-graph-name].active");
+    if (activeBtn) {
+      const graphName = activeBtn.dataset.graphName;
+      reloadGraph(graphName);
+    }
+  });
+
+  function populateSelect(id, values) {
+    const select = document.getElementById(id);
+    if (!select) return;
+
+    select.innerHTML = "";
+    values.forEach(val => {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.text = val;
+      select.appendChild(opt);
+    });
+
+    new TomSelect(select, {
+      plugins: ['remove_button'],
+      maxOptions: 1000,
+      closeAfterSelect: false,
+      placeholder: select.getAttribute("placeholder") || "",
+    });
+  }
+
+  // Load filters from backend
+  fetch("/akabat/get_filter_options/")
+    .then(res => res.json())
+    .then(data => {
+      populateSelect("select-years", data.years);
+      populateSelect("select-keywords", data.keywords);
+      populateSelect("select-keyword-groups", data.keyword_groups);
+      populateSelect("select-authors", data.authors);
+      populateSelect("select-author-groups", data.author_groups);
+    })
+    .catch(err => {
+      console.warn("⚠️ Error al cargar filtros:", err);
+      toggleFiltersBtn.insertAdjacentHTML("afterend", `<div class="text-danger mt-2">Error loading filters.</div>`);
+    });
+});
+</script>
+
+
+
+  <!-- Graph container -->
+  <div class="mt-4"></div>
+  <div class="graph-container w-100 px-0 mb-5 position-relative" style="min-height: 700px; z-index: 0;">
+    <div class="text-center mt-5 text-muted">Please select a graph to display it here...</div>
+  </div>
+
+  <!-- Buttons -->
+  <div class="d-flex justify-content-between align-items-center mt-5 px-3">
+    <a href="{{ back_url }}" class="btn btn-akabat-outline">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+    <a href="{{ next_url }}" class="btn btn-akabat">
+      Next <i class="bi bi-arrow-right"></i>
+    </a>
+  </div>
+</div>
+
+<!-- INFO MODAL -->
+<div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-light">
+        <h5 class="modal-title fw-bold" id="helpModalLabel">Graphical Analysis – Help</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body fs-6">
+        <p>This section allows you to explore the structured knowledge extracted from the dataset through various interactive visualizations. The graphs are organized into four thematic groups:</p>
+
+        <ul class="mb-4">
+          <li><strong>🌍 Geographical Graphs:</strong> These maps show the spatial distribution of scientific output and impact:
+            <ul>
+              <li><em>Proportion of Publications by Country:</em> Displays the percentage of publications per country, normalized by year. Animated to show changes over time.</li>
+              <li><em>Cumulative Publications by Country:</em> Shows the accumulated number of articles per country throughout the years.</li>
+              <li><em>Proportion of Citations by Country:</em> Visualizes citation impact distribution by country per year, normalized.</li>
+              <li><em>Cumulative Citations by Country:</em> Displays total citations received over time by country.</li>
+            </ul>
+          </li>
+
+          <li><strong>📊 Time Evolution Graphs:</strong> These charts analyze how publication trends evolve across topics:
+            <ul>
+              <li><em>Line Chart:</em> Shows the yearly count of articles per keyword group using standard scale.</li>
+              <li><em>Logarithmic Line Chart:</em> Same data as the line chart but using a logarithmic Y-axis to highlight exponential trends.</li>
+              <li><em>Polar Comparison Chart:</em> A dual polar bar chart that compares the thematic distribution of articles across two time periods.</li>
+            </ul>
+          </li>
+
+          <li><strong>👥 Author Graphs:</strong> Graph-based visualizations focused on author relationships and topics:
+            <ul>
+              <li><em>Semantic Clustering of Authors:</em> Groups authors by thematic similarity using keyword embeddings. Node size = number of articles, color = normalized citations.</li>
+              <li><em>Co-authorship Network:</em> Graph of collaboration links between authors. Node size = number of articles; color = normalized degree of connectivity.</li>
+            </ul>
+          </li>
+
+          <li><strong>🔑 Keyword Graphs:</strong> Visual summaries of keywords associated with author clusters:
+            <ul>
+              <li><em>Bubble Chart:</em> Shows top keywords per cluster. Size = frequency; color = cluster.</li>
+              <li><em>Heatmap:</em> Keyword frequency matrix by cluster. Color intensity reflects frequency of use.</li>
+            </ul>
+          </li>
+        </ul>
+
+        <p class="fw-semibold">Filters and Interactions:</p>
+        <ul>
+          <li><strong>Normalized Citations Filter:</strong> Display only authors above a citation impact threshold in author graphs.</li>
+          <li><strong>Top N Keywords:</strong> Limit the number of keywords shown per cluster in bubble charts.</li>
+          <li><strong>Minimum Frequency Filter:</strong> Exclude low-frequency keywords in heatmaps.</li>
+          <li><strong>Global Filters Panel:</strong> Apply filters by year, author, keyword, or group to all graphs simultaneously.</li>
+        </ul>
+
+        <p class="mt-4 text-muted mb-0">All graphs are interactive: you can hover over elements for details, zoom, pan, and dynamically adjust filters without reloading the page.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const buttons = document.querySelectorAll("button[data-graph-name]");
+  const thresholdContainer = document.getElementById("threshold-container");
+  const thresholdInput = document.getElementById("citation-threshold");
+  const thresholdLabel = document.getElementById("threshold-value");
+  const topnContainer = document.getElementById("topn-container");
+  const topnInput = document.getElementById("topn-keywords");
+  const topnLabel = document.getElementById("topn-value");
+
+  function getThresholdValue() {
+    return parseFloat(thresholdInput?.value || 0).toFixed(2);
+  }
+  
+  function getTopNValue() {
+    return parseInt(topnInput?.value || 10);
+  }
+
+  function reloadGraph(graphName) {
+    const graphContainer = document.querySelector(".graph-container");
+    const threshold = getThresholdValue();
+    const topN = getTopNValue();
+    let url = `/akabat/load_plot/${graphName}/?threshold=${threshold}` + getGeneralFiltersQuery();
+    if (graphName === "bubble" && topN > 0) {
+      url += `&top_n=${topN}`;
+    }
+
+    if (graphName === "heatmap") {
+      const freq = getFreqValue();
+      url += `&min_freq=${freq}`;
+    }
+
+    graphContainer.innerHTML = `
+      <div class="d-flex justify-content-center align-items-center" style="height: 600px;">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+      </div>`;
+
+        fetch(url)
+          .then(res => res.json())
+          .then(json => {
+            if (json.error) {
+              console.warn("⚠️ Backend returned error:", json.error);
+              graphContainer.innerHTML = `
+                <div class="alert alert-warning text-center mt-5">
+                  <strong>⚠️ Cannot generate this graph:</strong><br>${json.error}
+                </div>`;
+              return;
+            }
+
+            const plotId = "plot-" + graphName;
+            graphContainer.innerHTML = `<div id="${plotId}" style="width: 100%; height: 700px; max-width: 100%;"></div>`;
+
+            try {
+              if (json.frames) {
+                Plotly.newPlot(plotId, json.data, json.layout, {
+                  ...json.config,
+                  scrollZoom: true
+                }).then(() => {
+                  Plotly.addFrames(plotId, json.frames);
+                  Plotly.animate(plotId, null, {
+                    frame: { duration: 500, redraw: true },
+                    transition: { duration: 300 },
+                  });
+                });
+              } else {
+                Plotly.newPlot(plotId, json.data, json.layout, {
+                  ...json.config,
+                  scrollZoom: true
+                });
+              }
+            } catch (e) {
+              console.error("⚠️ Error al renderizar el gráfico con Plotly:", e);
+              graphContainer.innerHTML = "<div class='text-danger text-center mt-5'>Error loading graph (render error).</div>";
+            }
+          })
+          .catch((err) => {
+            console.error("❌ Error al obtener datos del backend:", err);
+            graphContainer.innerHTML = "<div class='text-danger text-center mt-5'>Error loading graph (fetch error).</div>";
+          });
+        }
+
+  thresholdInput.addEventListener("input", () => {
+    thresholdLabel.textContent = `Current: ≥ ${getThresholdValue()}`;
+  });
+
+  thresholdInput.addEventListener("change", () => {
+    const activeBtn = document.querySelector("button[data-graph-name].active");
+    const currentGraph = activeBtn?.dataset.graphName;
+    if (currentGraph === "author_cluster" || currentGraph === "coauthors") {
+      reloadGraph(currentGraph);
+    }
+  });
+
+  topnInput.addEventListener("input", () => {
+    topnLabel.textContent = `Current: ${getTopNValue()}`;
+  });
+
+  topnInput.addEventListener("change", () => {
+    const activeBtn = document.querySelector("button[data-graph-name].active");
+    if (activeBtn?.dataset.graphName === "bubble") {
+      reloadGraph("bubble");
+    }
+  });
+  const freqContainer = document.getElementById("freq-container");
+  const freqInput = document.getElementById("frequency-threshold");
+  const freqLabel = document.getElementById("freq-value");
+
+  function getFreqValue() {
+    return parseInt(freqInput?.value || 0);
+  }
+
+  freqInput.addEventListener("input", () => {
+    freqLabel.textContent = `Min: ≥ ${getFreqValue()}`;
+  });
+
+  freqInput.addEventListener("change", () => {
+    const activeBtn = document.querySelector("button[data-graph-name].active");
+    if (activeBtn?.dataset.graphName === "heatmap") {
+      reloadGraph("heatmap");
+    }
+  });
+
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", function () {
+      buttons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      const graphName = btn.dataset.graphName;
+
+      thresholdContainer.classList.toggle("d-none", !(graphName === "author_cluster" || graphName === "coauthors"));
+      topnContainer.classList.toggle("d-none", graphName !== "bubble");
+      freqContainer.classList.toggle("d-none", graphName !== "heatmap");
+
+      reloadGraph(graphName);
+    });
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "akabat_app/base_wizard.html" %}
+
+{% block extra_style %}
+  <style>
+    .row-color-disabled {
+      opacity: 0.4;
+    }
+    .remove-btn {
+      color: #dc3545;
+      border: none;
+      background: none;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .btn-unified {
+      min-width: 140px;
+      padding: 0.5rem 1.25rem;
+    }
+  </style>
+{% endblock %}
+
+{% block title %}Akabat – {{ step_title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="text-start fw-bold mb-4" style="color:#334e4e;">{{ step_title }}</h2>
+
+  <p>🛉 <strong>{{ removed_count }}</strong> duplicated articles were deleted.</p>
+  <p>📄 <strong>{{ total_articles }}</strong> articles imported.</p>
+
+  <!-- Table -->
+  <div style="max-height: 500px; overflow-y: auto; overflow-x: auto; border: 1px solid #e0e0e0; border-radius: 6px;">
+    <table class="table table-sm table-bordered mb-0" style="min-width: 1000px;">
+      <thead class="sticky-top" style="background-color: #ede7f6; color: #333;">
+        <tr>
+          {% for col in column_headers %}
+            <th>{{ col }}</th>
+          {% endfor %}
+          <th style="width: 30px;"></th>
+        </tr>
+      </thead>
+      <tbody id="review-table-body">
+        {% for row in preview_rows %}
+          <tr class="row-color-{{ row.source_id }}{% if row.is_disabled %} row-color-disabled{% endif %}" data-row-index="{{ forloop.counter0 }}">
+
+
+            {% for cell in row.values %}
+              <td>{{ cell }}</td>
+            {% endfor %}
+            <td class="text-center">
+              <button type="button" class="remove-btn" data-row-index="{{ forloop.counter0 }}" onclick="disableRow(this)">&times;</button>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="post" class="d-flex justify-content-between align-items-center mt-5">
+    {% csrf_token %}
+    <input type="hidden" name="disabled_rows" id="disabled_rows_input">
+
+    <a href="{% url 'upload_csv' %}" class="btn btn-akabat-outline btn-unified">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+
+    <a href="{{ next_url }}" class="btn btn-akabat btn-unified">
+      Continue <i class="bi bi-arrow-right"></i>
+    </a>
+  </form>
+</div>
+
+<script>
+  const disabledRows = new Set();
+
+  function disableRow(button) {
+    const index = button.getAttribute("data-row-index");
+    const row = document.querySelector(`tr[data-row-index='${index}']`);
+    if (!row) return;
+
+    if (row.classList.contains("row-color-disabled")) {
+      row.classList.remove("row-color-disabled");
+      disabledRows.delete(parseInt(index));
+    } else {
+      row.classList.add("row-color-disabled");
+      disabledRows.add(parseInt(index));
+    }
+    document.getElementById("disabled_rows_input").value = Array.from(disabledRows).join(",");
+  }
+</script>
+{% endblock %}

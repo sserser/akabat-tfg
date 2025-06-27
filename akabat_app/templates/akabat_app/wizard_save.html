@@ -1,0 +1,47 @@
+{% extends "akabat_app/base_wizard.html" %}
+
+{% block title %}Akabat - Save{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2>{{ step_title }}</h2>
+
+  <div class="alert alert-info">
+    {{ result_message|safe }}
+  </div>
+
+  <!-- Buttons -->
+  <div class="d-flex justify-content-between align-items-center mt-5">
+    {% if download_button %}
+      <form method="post" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-akabat">
+          <i class="bi bi-download"></i> Download ZIP
+        </button>
+      </form>
+      <a href="{{ end_url }}" class="btn btn-akabat-outline">
+        <i class="bi bi-box-arrow-right"></i> End
+      </a>
+    {% else %}
+      {% if current_step == 1 %}
+        <a href="{{ next_url }}" class="btn btn-akabat">
+          Next <i class="bi bi-arrow-right"></i>
+        </a>
+      {% elif current_step < total_steps %}
+        <div class="d-flex justify-content-between align-items-center w-100">
+          <a href="{{ back_url }}" class="btn btn-akabat-outline">
+            <i class="bi bi-arrow-left"></i> Back
+          </a>
+          <a href="{{ next_url }}" class="btn btn-akabat">
+            Next <i class="bi bi-arrow-right"></i>
+          </a>
+        </div>
+      {% else %}
+        <a href="{% url 'home' %}" class="btn btn-akabat">
+          Finish <i class="bi bi-check2-circle"></i>
+        </a>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+venv/
+myenv/
+overleaf/
+*.sqlite3
+*.db
+/media
+*.csv

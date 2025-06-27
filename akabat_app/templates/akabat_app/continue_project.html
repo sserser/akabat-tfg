@@ -1,0 +1,41 @@
+{% extends "akabat_app/base_wizard.html" %}
+
+{% block title %}Continue Existing Project{% endblock %}
+
+{% block content %}
+<div class="container mt-5" style="max-width: 700px;">
+  <div class="bg-white shadow-sm rounded-4 p-4">
+    <h2 class="mb-4">Continue Previous Project</h2>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Upload your project ZIP file:</label>
+        <input type="file" name="project_zip" class="form-control" accept=".zip" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Choose the step where you want to continue:</label>
+        <select name="step" class="form-select" required>
+          <option value="import">Step 2 – Import CSVs</option>
+          <option value="preferences">Step 3 – Set Preferences</option>
+          <option value="keywords">Step 4 – Generate Keywords</option>
+          <option value="grouping">Step 5 – Group Semantically</option>
+          <option value="clustering">Step 6 – Cluster Authors</option>
+          <option value="plots">Step 8 – Generate Plots</option>
+        </select>
+
+      </div>
+
+      <!-- Buttons -->
+      <div class="d-flex justify-content-between align-items-center mt-4">
+        <a href="{% url 'home' %}" class="btn btn-akabat-outline">
+          <i class="bi bi-arrow-left"></i> Back
+        </a>
+        <button type="submit" class="btn btn-akabat px-4">
+          Continue <i class="bi bi-arrow-right"></i>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+

@@ -1,0 +1,106 @@
+{% extends "akabat_app/base_wizard.html" %}
+{% load tz %}
+
+{% block title %}Your Projects{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  <h2 class="fw-bold mb-4" style="color:#334e4e;">🗂️ Manage Your Projects</h2>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if projects %}
+    <div class="row g-4">
+      {% for p in projects %}
+        <div class="col-md-6 col-lg-4">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column">
+
+              <!-- Name and edit button -->
+              {% if p.id|stringformat:"s" == edit_project_id %}
+                <form method="post" class="mb-3 d-flex gap-2">
+                  {% csrf_token %}
+                  <input type="hidden" name="project_id" value="{{ p.id }}">
+                  <input type="hidden" name="action" value="rename">
+                  <input type="text" name="new_name" class="form-control form-control-sm border-primary" style="font-weight: bold;" value="{{ p.name }}" autofocus>
+                  <button type="submit" class="btn btn-sm btn-outline-primary" title="Confirm rename">
+                    <i class="bi bi-check-lg"></i>
+                  </button>
+                </form>
+              {% else %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h5 class="card-title fw-bold text-truncate m-0">
+                    <i class="bi bi-folder2-open me-1"></i>{{ p.name }}
+                  </h5>
+                  <form method="post" class="m-0">
+                    {% csrf_token %}
+                    <input type="hidden" name="project_id" value="{{ p.id }}">
+                    <input type="hidden" name="action" value="rename_mode">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Rename project">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                  </form>
+                </div>
+              {% endif %}
+
+              <!-- Date -->
+              {% timezone "Europe/Berlin" %}
+              <p class="text-muted small mb-3">
+                <i class="bi bi-clock-history me-1"></i> Created: {{ p.created_at|date:"d M Y H:i" }}<br>
+                <i class="bi bi-pencil-square me-1"></i> Modified: {{ p.last_modified|date:"d M Y H:i" }}
+              </p>
+              {% endtimezone %}
+
+              <!-- RESUME -->
+              <a href="{% url 'resume_project' p.id %}" class="btn btn-success w-100 mb-3">
+                <i class="bi bi-play-fill me-1"></i> Resume
+              </a>
+
+              <!-- Several actions -->
+              <div class="d-flex justify-content-between gap-2">
+                <!-- Duplicate -->
+                <form method="post" class="flex-fill">
+                  {% csrf_token %}
+                  <input type="hidden" name="project_id" value="{{ p.id }}">
+                  <input type="hidden" name="action" value="duplicate">
+                  <button type="submit" class="btn btn-sm btn-outline-primary w-100" title="Duplicate project">
+                    <i class="bi bi-files"></i>
+                  </button>
+                </form>
+
+                <!-- Delete -->
+                <form method="post" class="flex-fill">
+                  {% csrf_token %}
+                  <input type="hidden" name="project_id" value="{{ p.id }}">
+                  <input type="hidden" name="action" value="delete">
+                  <button type="submit" class="btn btn-sm btn-outline-danger w-100" title="Delete project">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-muted">No saved projects yet.</p>
+  {% endif %}
+
+  <!-- back home -->
+  <div class="d-flex justify-content-start mt-5">
+    <a href="{% url 'home' %}" class="btn btn-akabat-outline">
+      <i class="bi bi-arrow-left"></i> Back 
+    </a>
+  </div>
+</div>
+{% endblock %}

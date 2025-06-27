@@ -1,0 +1,320 @@
+{% extends "akabat_app/base_wizard.html" %}
+{% block title %}Akabat – Author Clustering{% endblock %}
+
+{% block content %}
+<div class="container position-relative">
+  <button id="help-button" class="btn btn-light border position-absolute top-0 end-0 mt-2 me-2 rounded-circle shadow-sm" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
+    <i class="bi bi-question-circle"></i>
+  </button>
+
+  <h2 class="fw-bold mb-4">{{ step_title }}</h2>
+
+  <form method="post" class="mb-5">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="cluster">
+
+    <div class="form-check form-switch mb-3">
+      <input class="form-check-input" type="checkbox" id="useDefaults" checked>
+      <label class="form-check-label" for="useDefaults">Use default clustering parameters</label>
+    </div>
+
+    <div class="form-check mb-2">
+      <input class="form-check-input" type="radio" name="clustering_mode" id="autoMode" value="auto" checked>
+      <label class="form-check-label" for="autoMode">Automatic clustering (Silhouette Score)</label>
+    </div>
+
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="radio" name="clustering_mode" id="manualMode" value="manual">
+      <label class="form-check-label" for="manualMode">Manual clustering (define number of clusters)</label>
+    </div>
+
+    <div id="paramsSection" class="row mb-4">
+      <div class="col-md-3">
+        <label class="form-label">Number of clusters (k)</label>
+        <input type="number" name="num_clusters" class="form-control" id="num_clusters" min="2" max="100" disabled>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Stopword threshold (0 to 1)</label>
+        <input type="number" name="stopword_threshold" step="0.01" min="0" max="1" class="form-control" id="threshold">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Affinity (distance metric)</label>
+        <select id="affinity" name="affinity" class="form-select" disabled>
+          <option value="euclidean">Euclidean</option>
+          <option value="cosine">Cosine</option>
+          <option value="manhattan">Manhattan</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Distance Threshold (optional)</label>
+        <input type="number" name="distance_threshold" step="0.01" min="0" class="form-control" id="distance_threshold" disabled>
+      </div>
+    </div>
+
+    <button type="submit" name="action" value="cluster" class="btn btn-akabat mb-4">
+      <i class="bi bi-diagram-3"></i> Cluster Authors
+    </button>
+
+
+    {% if clusters %}
+      <hr>
+      <div class="alert alert-info">
+        Clustering completed: <strong>{{ clusters|length }} groups</strong> – Silhouette Score: <strong>{{ cluster_quality_score }}</strong>
+      </div>
+
+      <div id="group-list" class="semantic-group-list">
+        {% for name, info in clusters.items %}
+        <div class="card mb-4 shadow-sm group-card" data-disabled="false">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="fw-bold">Group: </span>
+              <input class="form-control d-inline-block w-50 group-name" type="text" value="{{ name }}">
+              <button type="button" class="btn btn-sm toggle-disable-group" title="Disable group">❌</button>
+            </div>
+            <div class="small mb-2 text-muted">Keywords: {{ info.keywords|join:", " }}</div>
+            <div class="keyword-container d-flex flex-wrap gap-2 py-2">
+              {% for author in info.authors %}
+                <span class="badge rounded-pill bg-light border keyword-item" draggable="true" data-keyword="{{ author }}">{{ author }}</span>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="mb-4">
+        <button type="button" id="add-group" class="btn btn-outline-secondary">
+          <i class="bi bi-plus-circle"></i> Add new group
+        </button>
+      </div>
+
+      <div id="hidden-group-data"></div>
+
+      <div class="d-flex justify-content-between align-items-center mt-5">
+        <a href="{{ back_url }}" class="btn btn-akabat-outline btn-unified">
+          <i class="bi bi-arrow-left"></i> Back
+        </a>
+
+        <button type="submit" name="action" value="save" class="btn btn-outline-secondary btn-unified">
+          💾 Save
+        </button>
+
+        <button type="submit" name="action" value="save_and_continue" class="btn btn-akabat btn-unified">
+          Next <i class="bi bi-arrow-right"></i>
+        </button>
+      </div>
+    {% endif %}
+  </form>
+</div>
+
+
+
+<!-- HELP MODAL -->
+<div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-light">
+        <h5 class="modal-title fw-bold" id="helpModalLabel">Author Clustering – Help</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body fs-6">
+        <p><strong>⚙️ What are the default parameters?</strong></p>
+        <ul>
+          <li><strong>Clustering method:</strong> Agglomerative with <code>Ward</code> linkage.</li>
+          <li><strong>Affinity:</strong> Euclidean distance.</li>
+          <li><strong>Distance threshold:</strong> None.</li>
+          <li><strong>Stopword threshold:</strong> 0.5 – keywords appearing in >50% of authors are ignored.</li>
+        </ul>
+
+        <p class="mt-4"><strong>🧠 What does “disable group” mean?</strong></p>
+        <ul>
+          <li>Clicking the <strong>❌</strong> icon will mark a group as <em>disabled</em>.</li>
+          <li>Disabled groups will be <span class="text-muted">excluded</span> from the database and final visualizations.</li>
+          <li>You can re-enable a group by clicking the icon again.</li>
+        </ul>
+
+        <p class="mt-4"><strong>👥 How to copy/paste authors?</strong></p>
+        <ul>
+          <li><strong>Right-click</strong> on an author to copy them.</li>
+          <li><strong>Right-click</strong> on a group's area to paste them there.</li>
+          <li>Authors cannot be pasted twice into the same group.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const manual = document.getElementById("manualMode");
+    const auto = document.getElementById("autoMode");
+    const useDefaults = document.getElementById("useDefaults");
+    const numInput = document.getElementById("num_clusters");
+    const thresholdInput = document.getElementById("threshold");
+    const affinitySelect = document.getElementById("affinity");
+
+    function toggleFields() {
+      const defaults = useDefaults.checked;
+      const isManual = manual.checked;
+
+      // Activar o desactivar todos los campos en función de "Use default"
+      document.getElementById("threshold").disabled = defaults ? true : false;
+      document.getElementById("affinity").disabled = defaults ? true : false;
+      document.getElementById("distance_threshold").disabled = defaults ? true : false;
+      document.getElementById("num_clusters").disabled = defaults || !isManual;
+
+      // Reset de valores si se activan por defecto
+      if (defaults) {
+        document.getElementById("threshold").value = "";
+        document.getElementById("num_clusters").value = "";
+        document.getElementById("distance_threshold").value = "";
+        document.getElementById("affinity").value = "euclidean";
+      }
+    }
+
+
+    manual.addEventListener("change", toggleFields);
+    auto.addEventListener("change", toggleFields);
+    useDefaults.addEventListener("change", toggleFields);
+    toggleFields();
+
+    // Drag & drop
+    let dragged;
+    document.addEventListener("dragstart", function (e) {
+      if (e.target.classList.contains("keyword-item")) {
+        dragged = e.target;
+        e.target.style.opacity = 0.5;
+      }
+    });
+    document.addEventListener("dragend", function (e) {
+      if (dragged) {
+        dragged.style.opacity = "";
+        dragged = null;
+      }
+    });
+    document.addEventListener("dragover", function (e) {
+      if (e.target.closest(".keyword-container")) {
+        e.preventDefault();
+      }
+    });
+    document.addEventListener("drop", function (e) {
+      if (dragged && e.target.closest(".keyword-container")) {
+        e.preventDefault();
+        const container = e.target.closest(".keyword-container");
+        const keyword = dragged.dataset.keyword;
+        const existing = Array.from(container.querySelectorAll(".keyword-item")).map(k => k.textContent.trim());
+        if (!existing.includes(keyword)) {
+          container.appendChild(dragged);
+        }
+      }
+    });
+
+    // Toggle disable group
+    document.addEventListener("click", function (e) {
+      if (e.target.classList.contains("toggle-disable-group")) {
+        const card = e.target.closest(".group-card");
+        const isDisabled = card.classList.toggle("group-disabled");
+        card.dataset.disabled = isDisabled ? "true" : "false";
+        e.target.title = isDisabled ? "Enable group" : "Disable group";
+      }
+    });
+
+    // Add group
+    document.getElementById("add-group")?.addEventListener("click", () => {
+      const groupList = document.getElementById("group-list");
+      const groupCard = document.createElement("div");
+      groupCard.className = "card mb-4 shadow-sm group-card";
+      groupCard.dataset.disabled = "false";
+      groupCard.innerHTML = `
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-bold">Group: </span>
+            <input class="form-control d-inline-block w-50 group-name" type="text" value="New group">
+            <button type="button" class="btn btn-sm toggle-disable-group" title="Disable group">❌</button>
+          </div>
+          <div class="small mb-2 text-muted">Keywords: —</div>
+          <div class="keyword-container d-flex flex-wrap gap-2 py-2"></div>
+        </div>`;
+      groupList.appendChild(groupCard);
+    });
+
+    // Save data before Next
+    document.querySelector("form")?.addEventListener("submit", function (e) {
+      const action = e.submitter?.value;
+      if (action !== "save_and_continue" && action !== "save") return;
+
+      const hiddenDiv = document.getElementById("hidden-group-data");
+      hiddenDiv.innerHTML = "";
+
+      document.querySelectorAll(".group-card").forEach(group => {
+        const name = group.querySelector(".group-name").value.trim();
+        const authors = Array.from(group.querySelectorAll(".keyword-item")).map(k => k.textContent.trim());
+        const isDisabled = group.dataset.disabled === "true";
+
+        if (name && authors.length) {
+          const inputName = document.createElement("input");
+          inputName.type = "hidden";
+          inputName.name = "group_names[]";
+          inputName.value = name;
+
+          const inputAuthors = document.createElement("input");
+          inputAuthors.type = "hidden";
+          inputAuthors.name = "group_authors[]";
+          inputAuthors.value = JSON.stringify(authors);
+
+          const inputDisabled = document.createElement("input");
+          inputDisabled.type = "hidden";
+          inputDisabled.name = "group_disabled[]";
+          inputDisabled.value = isDisabled ? "1" : "0";
+
+          hiddenDiv.appendChild(inputName);
+          hiddenDiv.appendChild(inputAuthors);
+          hiddenDiv.appendChild(inputDisabled);
+        }
+      });
+    });
+
+    // Copy / paste via right click
+    let copiedKeyword = null;
+    document.addEventListener("contextmenu", function (e) {
+      if (e.target.classList.contains("keyword-item")) {
+        e.preventDefault();
+        copiedKeyword = e.target.textContent.trim();
+      } else if (e.target.closest(".keyword-container")) {
+        if (copiedKeyword) {
+          const container = e.target.closest(".keyword-container");
+          const existing = Array.from(container.querySelectorAll(".keyword-item")).map(k => k.textContent.trim());
+          if (!existing.includes(copiedKeyword)) {
+            const span = document.createElement("span");
+            span.className = "badge rounded-pill bg-light border keyword-item";
+            span.draggable = true;
+            span.textContent = copiedKeyword;
+            span.dataset.keyword = copiedKeyword;
+            container.appendChild(span);
+          }
+        }
+      }
+    });
+  });
+</script>
+
+<style>
+  .keyword-item {
+    cursor: grab;
+    background-color: #f8f9fa !important;
+    color: #212529 !important;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    user-select: none;
+  }
+  .keyword-item:active {
+    cursor: grabbing;
+  }
+  .group-disabled {
+    opacity: 0.5;
+  }
+  .keyword-container {
+    min-height: 2.5rem;
+  }
+</style>
+{% endblock %}

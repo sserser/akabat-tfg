@@ -1,0 +1,229 @@
+{% extends "akabat_app/base_wizard.html" %}
+{% block title %}Akabat – Keywords preferences{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="text-start fw-bold mb-4" style="color:#334e4e;">{{ step_title }}</h2>
+
+  <!-- Unique keywords with show/hide button -->
+  <div class="mb-4">
+    <h5 class="text-muted">All Detected Keywords</h5>
+    <button class="btn btn-sm btn-outline-secondary mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#all-keywords-list" aria-expanded="false" aria-controls="all-keywords-list">
+      Show/Hide All Keywords
+    </button>
+    <div class="collapse show" id="all-keywords-list">
+      <div class="card card-body" style="max-height: 200px; overflow-y: auto; font-size: 14px;">
+        <ul class="list-unstyled mb-0">
+          {% for kw in unique_keywords %}
+            <li class="draggable keyword-pill" draggable="true" data-keyword="{{ kw }}">{{ kw }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+
+    <!-- WHITELIST -->
+    <h4 class="text-success">Whitelist: Only include these keywords</h4>
+    <div class="row g-4 mb-4">
+      <div class="col-md-4">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">Start With Keywords</h5>
+            <input type="text" id="included-start" class="form-control" placeholder="Add keyword and press Enter">
+            <div id="included-start-container" class="mb-2"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card shadow-sm dropzone-area" data-target="included-exact">
+          <div class="card-body">
+            <h5 class="card-title">Exact Match Keywords</h5>
+            <div id="included-exact-container" class="drop-target mb-2"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">Containing Keywords</h5>
+            <input type="text" id="included-contains" class="form-control" placeholder="Add keyword and press Enter">
+            <div id="included-contains-container" class="mb-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BLACKLIST -->
+    <h4 class="text-danger">Blacklist: Remove these keywords</h4>
+    <div class="row g-4">
+      <div class="col-md-4">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">Start With Keywords</h5>
+            <input type="text" id="excluded-start" class="form-control" placeholder="Add keyword and press Enter">
+            <div id="excluded-start-container" class="mb-2"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card shadow-sm dropzone-area" data-target="excluded-exact">
+          <div class="card-body">
+            <h5 class="card-title">Exact Match Keywords</h5>
+            <div id="excluded-exact-container" class="drop-target mb-2"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">Containing Keywords</h5>
+            <input type="text" id="excluded-contains" class="form-control" placeholder="Add keyword and press Enter">
+            <div id="excluded-contains-container" class="mb-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mt-5">
+      <a href="{% url 'review_import' %}" class="btn btn-akabat-outline btn-unified"><i class="bi bi-arrow-left"></i> Back</a>
+
+      <button type="submit" name="action" value="save" class="btn btn-outline-secondary btn-unified">💾 Save</button>
+
+      <button type="submit" name="action" value="next" class="btn btn-akabat btn-unified">Next <i class="bi bi-arrow-right"></i></button>
+    </div>
+
+
+  </form>
+</div>
+
+{{ default_included_keywords.included_starting_by_keywords|json_script:"included-start-data" }}
+{{ default_included_keywords.included_keywords|json_script:"included-exact-data" }}
+{{ default_included_keywords.included_contains_keywords|json_script:"included-contains-data" }}
+{{ default_excluded_keywords.excluded_starting_by_keywords_at_csv_import|json_script:"excluded-start-data" }}
+{{ default_excluded_keywords.excluded_keywords_at_csv_import|json_script:"excluded-exact-data" }}
+{{ default_excluded_keywords.excluded_contains_keywords_at_csv_import|json_script:"excluded-contains-data" }}
+
+<style>
+  .keyword-pill {
+    display: inline-block;
+    background-color: #dee2e6;
+    padding: 5px 10px;
+    border-radius: 20px;
+    cursor: grab;
+    user-select: none;
+    margin: 2px;
+  }
+  .keyword-pill button {
+    background: none;
+    border: none;
+    font-weight: bold;
+    margin-left: 8px;
+    cursor: pointer;
+  }
+  .dropzone-area {
+    border: 2px dashed #aaa;
+    min-height: 120px;
+  }
+  .dropzone-area.over {
+    border-color: #53a6a6;
+    background-color: #e6f5f5;
+  }
+</style>
+
+<script>
+function setupKeywordInput(inputId, containerId, inputName, defaultValues) {
+  const input = document.getElementById(inputId);
+  const container = document.getElementById(containerId);
+  function addKeyword(keyword) {
+    if (!keyword.trim()) return;
+    const pill = document.createElement("div");
+    pill.className = "keyword-pill";
+    pill.textContent = keyword;
+    const removeBtn = document.createElement("button");
+    removeBtn.textContent = "×";
+    removeBtn.onclick = () => container.removeChild(pill);
+    pill.appendChild(removeBtn);
+    const hiddenInput = document.createElement("input");
+    hiddenInput.type = "hidden";
+    hiddenInput.name = inputName + "[]";
+    hiddenInput.value = keyword;
+    pill.appendChild(hiddenInput);
+    container.appendChild(pill);
+  }
+  input.addEventListener("keypress", function(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addKeyword(input.value);
+      input.value = "";
+    }
+  });
+  defaultValues.forEach(addKeyword);
+}
+
+const configs = [
+  ["included-start", "included-start-container", "included_starting_by_keywords", "included-start-data"],
+  ["included-contains", "included-contains-container", "included_contains_keywords", "included-contains-data"],
+  ["excluded-start", "excluded-start-container", "excluded_starting_by_keywords_at_csv_import", "excluded-start-data"],
+  ["excluded-contains", "excluded-contains-container", "excluded_contains_keywords_at_csv_import", "excluded-contains-data"]
+];
+
+const dropConfigs = [
+  ["included-exact-container", "included_keywords", "included-exact-data"],
+  ["excluded-exact-container", "excluded_keywords_at_csv_import", "excluded-exact-data"]
+];
+
+document.addEventListener("DOMContentLoaded", () => {
+  configs.forEach(([inputId, containerId, name, dataId]) => {
+    const data = JSON.parse(document.getElementById(dataId).textContent);
+    setupKeywordInput(inputId, containerId, name, data);
+  });
+
+  dropConfigs.forEach(([containerId, inputName, dataId]) => {
+    const container = document.getElementById(containerId);
+    const values = JSON.parse(document.getElementById(dataId).textContent);
+    values.forEach(kw => addToDropzone(container, inputName, kw));
+
+    container.parentElement.addEventListener("dragover", e => {
+      e.preventDefault();
+      container.parentElement.classList.add("over");
+    });
+    container.parentElement.addEventListener("dragleave", () => {
+      container.parentElement.classList.remove("over");
+    });
+    container.parentElement.addEventListener("drop", e => {
+      e.preventDefault();
+      container.parentElement.classList.remove("over");
+      const kw = e.dataTransfer.getData("text/plain");
+      addToDropzone(container, inputName, kw);
+    });
+  });
+
+  document.querySelectorAll(".draggable").forEach(el => {
+    el.addEventListener("dragstart", e => {
+      e.dataTransfer.setData("text/plain", e.target.getAttribute("data-keyword"));
+    });
+  });
+});
+
+function addToDropzone(container, inputName, keyword) {
+  const existing = Array.from(container.querySelectorAll("input")).map(i => i.value);
+  if (existing.includes(keyword)) return;
+  const pill = document.createElement("div");
+  pill.className = "keyword-pill";
+  pill.textContent = keyword;
+  const removeBtn = document.createElement("button");
+  removeBtn.textContent = "×";
+  removeBtn.onclick = () => container.removeChild(pill);
+  pill.appendChild(removeBtn);
+  const hidden = document.createElement("input");
+  hidden.type = "hidden";
+  hidden.name = inputName + "[]";
+  hidden.value = keyword;
+  pill.appendChild(hidden);
+  container.appendChild(pill);
+}
+</script>
+{% endblock %}

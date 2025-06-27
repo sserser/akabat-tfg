@@ -1,0 +1,348 @@
+{% extends "akabat_app/base_wizard.html" %}
+{% block title %}Akabat – Semantic Grouping{% endblock %}
+
+{% block content %}
+<div class="container position-relative">
+  <button id="help-button" class="btn btn-light border position-absolute top-0 end-0 mt-2 me-2 rounded-circle shadow-sm" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
+    <i class="bi bi-question-circle"></i>
+  </button>
+
+  <h2 class="fw-bold mb-4">{{ step_title }}</h2>
+
+  <form method="post" class="mb-5">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="cluster">
+
+    <!-- Clustering options -->
+    <div class="form-check form-switch mb-3">
+      <input class="form-check-input" type="checkbox" id="useDefaults" checked>
+      <label class="form-check-label" for="useDefaults">Use default clustering parameters - Distance: Ward, Affinity: Euclidean, distance: None</label>
+    </div>
+
+    <div class="form-check mb-2">
+      <input class="form-check-input" type="radio" name="clustering_mode" id="autoMode" value="auto" {% if selected_mode == "auto" %}checked{% endif %}>
+      <label class="form-check-label" for="autoMode">Automatic clustering (Silhouette Score)</label>
+    </div>
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="radio" name="clustering_mode" id="manualMode" value="manual" {% if selected_mode == "manual" %}checked{% endif %}>
+      <label class="form-check-label" for="manualMode">Manual clustering (choose number of groups)</label>
+    </div>
+
+    <div class="mb-3">
+      <label for="num_clusters" class="form-label">Number of clusters (max {{ max_clusters }} )</label>
+      <input type="number" class="form-control" id="num_clusters" name="num_clusters" min="2" max="{{ max_clusters }}" value="{% if selected_mode == 'manual' %}{{ selected_k }}{% endif %}" {% if selected_mode != "manual" %}disabled placeholder="—"{% endif %}>
+    </div>
+
+    <div id="paramsSection" class="row mb-4">
+      <div class="col-md-4">
+        <label for="linkage" class="form-label">Linkage method</label>
+        <select id="linkage" name="linkage" class="form-select">
+          <option value="ward" {% if selected_linkage == "ward" %}selected{% endif %}>Ward</option>
+          <option value="average" {% if selected_linkage == "average" %}selected{% endif %}>Average</option>
+          <option value="complete" {% if selected_linkage == "complete" %}selected{% endif %}>Complete</option>
+          <option value="single" {% if selected_linkage == "single" %}selected{% endif %}>Single</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label for="affinity" class="form-label">Distance metric</label>
+        <select id="affinity" name="affinity" class="form-select"></select>
+      </div>
+      <div class="col-md-4">
+        <label for="distance_threshold" class="form-label">Distance Threshold (optional)</label>
+        <input type="number" step="0.01" min="0" name="distance_threshold" class="form-control" id="distance_threshold">
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-akabat mb-4">
+      <i class="bi bi-diagram-3"></i> Group Keywords
+    </button>
+
+    {% if groups %}
+      <hr>
+      <div class="alert alert-info">
+        Grouping completed: <strong>{{ groups|length }} groups</strong>
+        – Silhouette Score: <strong>{{ silhouette_score_used|floatformat:3 }}</strong>
+      </div>
+
+      <div id="group-list" class="semantic-group-list">
+        {% for group_id, keywords in groups.items %}
+          <div class="card mb-4 shadow-sm group-card" data-disabled="false">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="fw-bold">Group: </span>
+                <input class="form-control d-inline-block w-50 group-name" type="text" value="{{ group_id }}">
+                <button type="button" class="btn btn-sm toggle-disable-group" title="Disable group">❌</button>
+              </div>
+              <div class="keyword-container d-flex flex-wrap gap-2 py-2">
+                {% for kw in keywords %}
+                  <span class="badge rounded-pill bg-light border keyword-item" draggable="true" data-keyword="{{ kw }}">{{ kw }}</span>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="mb-4">
+        <button type="button" id="add-group" class="btn btn-outline-secondary">
+          <i class="bi bi-plus-circle"></i> Add new group
+        </button>
+      </div>
+
+      <div id="hidden-group-data"></div>
+
+      <div class="d-flex justify-content-between align-items-center mt-5">
+        <a href="{% url 'process_keywords' %}" class="btn btn-akabat-outline btn-unified">
+          <i class="bi bi-arrow-left"></i> Back
+        </a>
+
+        <button type="submit" name="action" value="save" class="btn btn-outline-secondary btn-unified">
+          💾 Save
+        </button>
+
+        <button type="submit" name="action" value="save_and_continue" class="btn btn-akabat btn-unified">
+          Next <i class="bi bi-arrow-right"></i>
+        </button>
+      </div>
+
+    {% endif %}
+  </form>
+</div>
+
+<!-- HELP MODAL -->
+<div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-light">
+        <h5 class="modal-title fw-bold" id="helpModalLabel">Semantic Grouping – Help</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body fs-6">
+        <p><strong>🧠 What does “disable group” mean?</strong></p>
+        <ul>
+          <li>Clicking the <strong>❌</strong> icon will mark a group as <em>disabled</em>.</li>
+          <li>Disabled groups will be <span class="text-muted">ignored</span> in the next clustering steps.</li>
+          <li>You can re-enable a group by clicking the ❌ icon again.</li>
+        </ul>
+
+        <p class="mt-4"><strong>📋 How to copy/paste keywords?</strong></p>
+        <ul>
+          <li><strong>Right click</strong> on a keyword to copy it.</li>
+          <li><strong>Right click</strong> on a group's empty area to paste it there.</li>
+          <li>Keywords cannot be pasted twice into the same group.</li>
+        </ul>
+        <p class="mt-4"><strong>📏 What happens if I set a distance threshold?</strong></p>
+          <ul>
+            <li>If you enter a value in the <em>Distance Threshold</em> field, it will override both automatic and manual clustering modes.</li>
+            <li>In this case, the system will group keywords based solely on semantic distance, ignoring the number of clusters specified.</li>
+          </ul>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+<script>
+  const autoRadio = document.getElementById("autoMode");
+  const manualRadio = document.getElementById("manualMode");
+  const numInput = document.getElementById("num_clusters");
+  const useDefaults = document.getElementById("useDefaults");
+  const paramsSection = document.getElementById("paramsSection");
+
+  const affinityMap = {
+    ward: ['euclidean'],
+    average: ['euclidean', 'cosine', 'manhattan'],
+    complete: ['euclidean', 'cosine', 'manhattan'],
+    single: ['euclidean', 'cosine', 'manhattan'],
+  };
+
+  const linkageSelect = document.getElementById("linkage");
+  const affinitySelect = document.getElementById("affinity");
+
+  function toggleClusterInput() {
+    numInput.disabled = !manualRadio.checked;
+    numInput.placeholder = manualRadio.checked ? "" : "—";
+  }
+
+  function toggleParamsSection() {
+    paramsSection.style.display = useDefaults.checked ? "none" : "flex";
+  }
+
+  function updateAffinityOptions() {
+    const selectedLinkage = linkageSelect.value;
+    const affinities = affinityMap[selectedLinkage];
+    const current = "{{ selected_affinity|default:'euclidean' }}";
+    affinitySelect.innerHTML = "";
+    affinities.forEach(aff => {
+      const option = document.createElement("option");
+      option.value = aff;
+      option.textContent = aff.charAt(0).toUpperCase() + aff.slice(1);
+      if (aff === current) option.selected = true;
+      affinitySelect.appendChild(option);
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    toggleClusterInput();
+    toggleParamsSection();
+    updateAffinityOptions();
+  });
+
+  autoRadio.addEventListener("change", toggleClusterInput);
+  manualRadio.addEventListener("change", toggleClusterInput);
+  useDefaults.addEventListener("change", toggleParamsSection);
+  linkageSelect.addEventListener("change", updateAffinityOptions);
+
+  // Drag & Drop
+  let dragged;
+  document.addEventListener("dragstart", (e) => {
+    if (e.target.classList.contains("keyword-item")) {
+      dragged = e.target;
+      e.target.style.opacity = 0.5;
+    }
+  });
+
+  document.addEventListener("dragend", (e) => {
+    if (dragged) dragged.style.opacity = "";
+    dragged = null;
+  });
+
+  document.addEventListener("dragover", (e) => e.preventDefault());
+
+  document.addEventListener("drop", (e) => {
+    if (dragged && e.target.closest(".keyword-container")) {
+      e.preventDefault();
+      const container = e.target.closest(".keyword-container");
+      const keyword = dragged.dataset.keyword;
+      const existing = Array.from(container.querySelectorAll(".keyword-item")).map(k => k.textContent.trim());
+      if (!existing.includes(keyword)) {
+        container.appendChild(dragged);
+      }
+    }
+  });
+
+  // Save before Next
+  document.querySelector('form')?.addEventListener("submit", function (e) {
+    const action = e.submitter?.value;
+    if (action !== "save_and_continue" && action !== "save") return;
+
+    const hiddenDiv = document.getElementById("hidden-group-data");
+    hiddenDiv.innerHTML = "";
+
+    document.querySelectorAll(".group-card").forEach(group => {
+      const name = group.querySelector(".group-name").value.trim();
+      const keywords = Array.from(group.querySelectorAll(".keyword-item")).map(k => k.textContent.trim());
+      const isDisabled = group.dataset.disabled === "true";
+
+      if (name && keywords.length) {
+        const inputName = document.createElement("input");
+        inputName.type = "hidden";
+        inputName.name = "group_names[]";
+        inputName.value = name;
+
+        const inputKw = document.createElement("input");
+        inputKw.type = "hidden";
+        inputKw.name = "group_keywords[]";
+        inputKw.value = JSON.stringify(keywords);
+
+        const inputDisabled = document.createElement("input");
+        inputDisabled.type = "hidden";
+        inputDisabled.name = "group_disabled[]";
+        inputDisabled.value = isDisabled ? "1" : "0";
+
+        hiddenDiv.appendChild(inputName);
+        hiddenDiv.appendChild(inputKw);
+        hiddenDiv.appendChild(inputDisabled);
+      }
+    });
+  });
+
+  // Add Group
+  document.getElementById("add-group")?.addEventListener("click", () => {
+    const groupList = document.getElementById("group-list");
+    const groupCard = document.createElement("div");
+    groupCard.className = "card mb-4 shadow-sm group-card";
+    groupCard.dataset.disabled = "false";
+    groupCard.innerHTML = `
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="fw-bold">Group: </span>
+          <input class="form-control d-inline-block w-50 group-name" type="text" value="New group">
+          <button type="button" class="btn btn-sm toggle-disable-group" title="Disable group">❌</button>
+        </div>
+        <div class="keyword-container d-flex flex-wrap gap-2 py-2"></div>
+      </div>`;
+    groupList.appendChild(groupCard);
+  });
+
+
+  // Toggle disable/enable group
+  document.addEventListener("click", function (e) {
+    if (e.target.classList.contains("toggle-disable-group")) {
+      const card = e.target.closest(".group-card");
+      const isDisabled = card.classList.toggle("group-disabled");
+      card.dataset.disabled = isDisabled ? "true" : "false";
+      e.target.title = isDisabled ? "Enable group" : "Disable group";
+    }
+  });
+
+  // Copy / Paste logic
+  let copiedKeyword = null;
+
+  document.addEventListener("contextmenu", function (e) {
+    if (e.target.classList.contains("keyword-item")) {
+      e.preventDefault();
+      copiedKeyword = e.target.textContent.trim();
+    } else if (e.target.closest(".keyword-container")) {
+      if (copiedKeyword) {
+        const container = e.target.closest(".keyword-container");
+        const existing = Array.from(container.querySelectorAll(".keyword-item")).map(k => k.textContent.trim());
+        if (!existing.includes(copiedKeyword)) {
+          const span = document.createElement("span");
+          span.className = "badge rounded-pill bg-light border keyword-item";
+          span.draggable = true;
+          span.textContent = copiedKeyword;
+          span.dataset.keyword = copiedKeyword;
+          container.appendChild(span);
+        }
+      }
+    }
+  });
+</script>
+
+<style>
+  .keyword-item {
+    cursor: grab;
+    user-select: none;
+    background-color: #f8f9fa !important;
+    color: #212529 !important;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+  }
+  .help-icon {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .keyword-item:active {
+    cursor: grabbing;
+  }
+
+  .keyword-container {
+    min-height: 2.5rem;
+  }
+
+  .group-disabled {
+    opacity: 0.5;
+  }
+</style>
+
+{% endblock %}

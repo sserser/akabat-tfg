@@ -1,0 +1,137 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Akabat – Home Page</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- Google Fonts: Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+
+  <style>
+    body, html {
+      height: 100%;
+      margin: 0;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .split-screen {
+      display: flex;
+      height: 100vh;
+      position: relative;
+    }
+
+    .left-panel {
+      width: 60%;
+      background-color: #f8f9fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem;
+      position: relative;
+    }
+
+    .right-panel {
+      width: 40%;
+      background-color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      border-left: 1px solid #eaeaea;
+    }
+
+    .logo-img {
+      max-width: 90%;
+      height: auto;
+    }
+
+    .welcome-content h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      color: #53a6a6;
+    }
+
+    .welcome-content h2 {
+      font-size: 1.25rem;
+      color: #6c757d;
+      margin-bottom: 1rem;
+    }
+
+    .welcome-content p {
+      font-size: 1.125rem;
+      color: #495057;
+      margin-bottom: 2.5rem;
+    }
+
+    .welcome-buttons .btn {
+      font-size: 1.1rem;
+      padding: 0.75rem 2rem;
+    }
+
+    .btn-akabat {
+      background-color: #53a6a6;
+      color: white;
+      border: none;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .btn-akabat:hover {
+      background-color: #408989;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .user-menu {
+      position: absolute;
+      top: 20px;
+      left: 30px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="split-screen">
+
+    <!-- Left panel -->
+    <div class="left-panel">
+
+      <!-- User icon -->
+      <div class="user-menu position-absolute top-0 start-0 mt-3 ms-4">
+        <a href="{% url 'project_list' %}" class="btn btn-light border rounded-circle shadow-sm" title="Manage Projects">
+          <i class="bi bi-person-circle" style="font-size: 1.8rem; color: #444;"></i>
+        </a>
+      </div>
+      
+      <div class="welcome-content text-center">
+        <h1>Explore, Discover, Analyze</h1>
+        <h2>Advanced Knowledge Aggregator for Bibliometric Analysis and Trends Abstract</h2>
+        <p>
+          AKABAT is a novel analysis tool that allows researchers to quickly and effortlessly 
+          identify publication opportunities and generate statistical graphics to strengthen 
+          their research. Navigate your field with advanced NLP techniques that reveal 
+          trends, tendencies, and emerging sub-areas.
+        </p>
+        <div class="welcome-buttons d-flex justify-content-center gap-3">
+          <a href="{% url 'welcome' %}" class="btn btn-akabat">Start New Project</a>
+          <a href="{% url 'continue_project' %}" class="btn btn-outline-secondary">Continue Project</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right panel -->
+    <div class="right-panel">
+      <img src="{% static 'akabatlogowhite2.png' %}" alt="Akabat Logo" class="logo-img">
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

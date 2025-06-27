@@ -1,0 +1,383 @@
+{% extends "akabat_app/base_wizard.html" %}
+{% load static %}
+
+{% block title %}Akabat - Import CSVs{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="mb-4">Import CSVs</h2>
+
+  <!-- Browser tabs -->
+  <ul class="nav nav-tabs mb-4" id="import-tabs" role="tablist">
+    <li class="nav-item">
+      <button class="nav-link active" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-pane" type="button">Locally</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" id="scopus-tab" data-bs-toggle="tab" data-bs-target="#scopus-pane" type="button">Scopus</button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+    <!-- Pane: local upload -->
+    <div class="tab-pane fade show active" id="local-pane">
+      <div class="row">
+        <div class="col-md-7">
+          <div class="card mb-4">
+            <div class="card-body">
+              <h5 class="card-title">Import from your laptop</h5>
+              <form method="post" enctype="multipart/form-data" action="{% url 'upload_csv' %}">
+                {% csrf_token %}
+                <input type="hidden" name="local_upload" value="1">
+                <div class="mb-3">
+                  <input type="file" name="csv_files" accept=".csv" multiple class="form-control">
+                </div>
+                <button type="submit" class="btn btn-akabat">Upload CSVs</button>
+              </form>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-5">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body d-flex flex-column">
+              <h5 class="card-title">Files uploaded</h5>
+              {% if csv_files %}
+                <ul class="list-group flex-grow-1 overflow-auto mb-3" style="max-height: 300px;">
+                  {% for csv in csv_files %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                      <div>
+                        {% if csv.source == "scopus" %}
+                          <strong>[Scopus]</strong>
+                        {% else %}
+                          <strong>[Local]</strong>
+                        {% endif %}
+                        {{ csv.filename }}
+                        {% if csv.source == "scopus" or csv.preferences.title and csv.preferences.author and csv.preferences.publication_year and csv.preferences.doi and csv.preferences.country and csv.preferences.keywords %}
+                          <span class="badge bg-success ms-2">✓</span>
+                        {% else %}
+                          <span class="badge bg-warning text-dark ms-2">Columns not defined</span>
+                        {% endif %}
+
+                      </div>
+                      <div class="d-flex align-items-center">
+                        {% if csv.source == "local" %}
+                          <button type="button"
+                                  class="btn btn-sm btn-outline-secondary me-2"
+                                  data-bs-toggle="modal"
+                                  data-bs-target="#prefsModal"
+                                  data-csv-id="{{ csv.id }}"
+                                  data-pref-title="{{ csv.preferences.title|default:'' }}"
+                                  data-pref-author="{{ csv.preferences.author|default:'' }}"
+                                  data-pref-publication_year="{{ csv.preferences.publication_year|default:'' }}"
+                                  data-pref-doi="{{ csv.preferences.doi|default:'' }}"
+                                  data-pref-country="{{ csv.preferences.country|default:'' }}"
+                                  data-pref-keywords="{{ csv.preferences.keywords|default:'' }}"
+                                  data-pref-citations="{{ csv.preferences.citations|default:'' }}"
+                                  data-pref-references="{{ csv.preferences.references|default:'' }}">
+
+                            Edit
+                          </button>
+                        {% endif %}
+
+                        <form method="post" action="{% url 'upload_csv' %}" style="display:inline;">
+                          {% csrf_token %}
+                          <input type="hidden" name="remove_id" value="{{ csv.id }}">
+                          <button type="submit" class="btn btn-sm btn-outline-danger">&times;</button>
+                        </form>
+                      </div>
+                    </li>
+                  {% endfor %}
+                </ul>
+                <form method="post" action="{% url 'upload_csv' %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="finalize" value="1">
+                  <button type="submit" class="btn btn-akabat w-100">Continue</button>
+                </form>
+              {% else %}
+                <p class="text-muted">You have not imported any files.</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pane: Scopus -->
+    <div class="tab-pane fade" id="scopus-pane">
+      <div class="row">
+        <div class="col-md-7">
+          <div class="card mb-4">
+            <div class="card-body">
+              <h5 class="card-title">Import from Scopus</h5>
+              <form method="post" action="{% url 'upload_csv' %}" id="scopus-form">
+                {% csrf_token %}
+                <input type="hidden" name="scopus_fetch" value="1">
+                <input type="hidden" name="keywords" id="keywords-hidden">
+
+                <div class="mb-2">
+                  <label class="form-label">Keywords:</label>
+                  <input type="text" id="keyword-input" class="form-control" placeholder="Type and press Enter">
+                  <div id="keywords-container" class="mt-2 d-flex flex-wrap gap-2"></div>
+                </div>
+                <div class="mb-2">
+                  <label class="form-label">Combine keywords with:</label>
+                  {{ scopus_form.keyword_logic }}
+                </div>
+                <div class="mb-2">
+                  <label class="form-label">From Year:</label>
+                  {{ scopus_form.year_from }}
+                </div>
+                <div class="mb-2">
+                  <label class="form-label">To Year:</label>
+                  {{ scopus_form.year_to }}
+                </div>
+                <div class="mb-2">
+                  <label class="form-label">Autor:</label>
+                  {{ scopus_form.author }}
+                </div>
+                <div class="mb-2">
+                  <label class="form-label">Language:</label>
+                  {{ scopus_form.language }}
+                </div>
+                <div class="mb-2">
+                  <label class="form-label">Order by:</label>
+                  {{ scopus_form.order_by }}
+                </div>
+                <div class="mb-2">
+                  <label class="form-label">Number Results (max 2000):</label>
+                  {{ scopus_form.max_results }}
+                </div>
+                <hr>
+                  <div class="mb-3">
+                    <label class="form-label">Advanced Query (optional):</label>
+                    {{ scopus_form.advanced_query }}
+                    <small class="form-text text-muted">
+                      If you use this, all other filters will be ignored. Please follow Scopus syntax.
+                    </small>
+                  </div>
+
+                <button type="submit" class="btn btn-akabat">Extract CSV</button>
+              </form>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-5">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body d-flex flex-column">
+              <h5 class="card-title">Files uploaded</h5>
+              {% if csv_files %}
+                <ul class="list-group flex-grow-1 overflow-auto mb-3" style="max-height: 300px;">
+                  {% for csv in csv_files %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                      <div>
+                        {% if csv.source == "scopus" %}
+                          <strong>[Scopus]</strong>
+                        {% else %}
+                          <strong>[Local]</strong>
+                        {% endif %}
+                        {{ csv.filename }}
+                        {% if csv.source == "scopus" or csv.preferences.title and csv.preferences.author and csv.preferences.publication_year and csv.preferences.doi and csv.preferences.country and csv.preferences.keywords %}
+                          <span class="badge bg-success ms-2">✓</span>
+                        {% else %}
+                          <span class="badge bg-warning text-dark ms-2">Columns not defined</span>
+                        {% endif %}
+
+                      </div>
+                      <div class="d-flex align-items-center">
+                        {% if csv.source == "local" %}
+                          <button type="button"
+                            class="btn btn-sm btn-outline-secondary me-2"
+                            data-bs-toggle="modal"
+                            data-bs-target="#prefsModal"
+                            data-csv-id="{{ csv.id }}"
+                            data-pref-title="{{ csv.preferences.title|default:'' }}"
+                            data-pref-author="{{ csv.preferences.author|default:'' }}"
+                            data-pref-publication_year="{{ csv.preferences.publication_year|default:'' }}"
+                            data-pref-doi="{{ csv.preferences.doi|default:'' }}"
+                            data-pref-country="{{ csv.preferences.country|default:'' }}"
+                            data-pref-keywords="{{ csv.preferences.keywords|default:'' }}"
+                            data-pref-citations="{{ csv.preferences.citations|default:'' }}"
+                            data-pref-references="{{ csv.preferences.references|default:'' }}">
+                      Edit
+                    </button>
+                        {% endif %}
+
+                        <form method="post" action="{% url 'upload_csv' %}" style="display:inline;">
+                          {% csrf_token %}
+                          <input type="hidden" name="remove_id" value="{{ csv.id }}">
+                          <button type="submit" class="btn btn-sm btn-outline-danger">&times;</button>
+                        </form>
+                      </div>
+                    </li>
+                  {% endfor %}
+                </ul>
+                <form method="post" action="{% url 'upload_csv' %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="finalize" value="1">
+                  <button type="submit" class="btn btn-akabat w-100">Continue</button>
+                </form>
+              {% else %}
+                <p class="text-muted">You have not imported any files.</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<div class="d-flex justify-content-between align-items-center mt-5">
+  <!-- Back button -->
+  <a href="{% url 'welcome' %}" class="btn btn-outline-secondary btn-unified">
+    ← Back
+  </a>
+
+  <!-- Save button -->
+  <form method="post" class="mx-auto">
+    {% csrf_token %}
+    <input type="hidden" name="save_project" value="1">
+    <button type="submit" class="btn btn-outline-primary btn-unified">💾 Save</button>
+  </form>
+
+  <div style="width: 140px;"></div>
+
+</div>
+
+<!-- Edit panel -->
+<div class="modal fade" id="prefsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{% url 'upload_csv' %}">
+        {% csrf_token %}
+        <div class="modal-header">
+          <h5 class="modal-title">Set column names</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="edit_id" id="modal-csv-id">
+
+          {% for field in column_fields %}
+            <div class="mb-2">
+              <label class="form-label">
+                {{ field|capfirst }}
+                {% if field in required_fields %}<span class="text-danger">*</span>{% endif %}
+              </label>
+
+              {% if field in required_fields %}
+                <input
+                  name="{{ field }}"
+                  class="form-control"
+                  placeholder="Column name"
+                  data-required="True"
+                >
+
+              {% else %}
+                <input
+                  name="{{ field }}"
+                  class="form-control"
+                  placeholder="Column name"
+                  data-required="False"
+                >
+              {% endif %}
+            </div>
+          {% endfor %}
+
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-akabat" id="modal-save-button" disabled>Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<script id="columnFields" type="application/json">{{ column_fields|json_script:"columnFields" }}</script>
+<script>
+prefsModal.addEventListener('shown.bs.modal', function (event) {
+  const button = event.relatedTarget;
+  const csvId = button.getAttribute('data-csv-id');
+  document.getElementById('modal-csv-id').value = csvId;
+
+  const columnFields = JSON.parse(document.getElementById('columnFields').textContent);
+  columnFields.forEach(field => {
+    const input = prefsModal.querySelector(`input[name="${field}"]`);
+    if (input) {
+      const val = button.getAttribute(`data-pref-${field}`);
+      if (val !== null) {
+        input.value = val;
+        input.setAttribute("value", val); 
+      }
+
+      if (input.dataset.required === "True" && !input.value.trim()) {
+        input.classList.add("is-invalid");
+      } else {
+        input.classList.remove("is-invalid");
+      }
+    }
+  });
+
+  validateModalInputs();
+
+
+  const inputs = prefsModal.querySelectorAll('input');
+  inputs.forEach(input => {
+    input.addEventListener('input', validateModalInputs);
+  });
+});
+
+
+
+  const input = document.getElementById("keyword-input");
+  const hidden = document.getElementById("keywords-hidden");
+  const container = document.getElementById("keywords-container");
+  let keywords = [];
+
+  input?.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const val = input.value.trim();
+      if (val && !keywords.includes(val)) {
+        keywords.push(val);
+        renderKeywords();
+        input.value = "";
+      }
+    }
+  });
+
+  function validateModalInputs() {
+    const saveButton = document.getElementById('modal-save-button');
+    const requiredInputs = prefsModal.querySelectorAll('input[data-required="True"]');
+
+    const allFilled = Array.from(requiredInputs).every(input => input.value.trim() !== "");
+    saveButton.disabled = !allFilled;
+  }
+
+prefsModal.addEventListener('shown.bs.modal', function () {
+    validateModalInputs(); 
+    const inputs = prefsModal.querySelectorAll('input');
+
+    inputs.forEach(input => {
+      input.addEventListener('input', validateModalInputs); 
+    });
+  });
+
+  function renderKeywords() {
+    container.innerHTML = "";
+    keywords.forEach((kw, index) => {
+      const badge = document.createElement("span");
+      badge.className = "badge bg-secondary d-flex align-items-center";
+      badge.style.padding = "0.5em";
+      badge.innerHTML = `
+        ${kw}
+        <button type="button" class="btn-close btn-close-white ms-2" aria-label="Remove"></button>
+      `;
+      badge.querySelector("button").addEventListener("click", () => {
+        keywords.splice(index, 1);
+        renderKeywords();
+      });
+      container.appendChild(badge);
+    });
+    hidden.value = keywords.join(",");
+  }
+</script>
+{% endblock %}

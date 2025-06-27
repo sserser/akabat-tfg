@@ -1,0 +1,61 @@
+{% extends "akabat_app/base_wizard.html" %}
+{% load static %}
+
+{% block title %}Akabat – {{ step_title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="text-start fw-bold mb-4" style="color:#334e4e;">{{ step_title }}</h2>
+
+  <!-- Message -->
+  <div class="alert alert-info shadow-sm border text-center mb-4" style="background-color: #e0f9ff; color: #1b4d56;">
+    {{ result_message|safe }}
+  </div>
+
+  <!-- Database schema -->
+  <div class="bg-light p-3 rounded border text-center mb-4">
+    <img src="{% static 'database.png' %}" alt="Database schema" class="img-fluid" style="max-width: 600px;">
+  </div>
+
+  <!-- Database information -->
+  <div class="row g-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm border-0">
+        <div class="card-body">
+          <h5 class="card-title">📁 File Info</h5>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">Path: <code>{{ db_path }}</code></li>
+            <li class="list-group-item">Size: {{ db_size }} MB</li>
+            <li class="list-group-item">Created: {{ created_at }}</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card shadow-sm border-0">
+        <div class="card-body">
+          <h5 class="card-title">🗃 Tables Summary</h5>
+          <ul class="list-group list-group-flush">
+            {% for table in table_info %}
+            <li class="list-group-item">
+              <strong>{{ table.name }}</strong>: {{ table.rows }} rows, {{ table.columns }} columns
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Different buttons -->
+  <div class="d-flex justify-content-between align-items-center mt-5">
+    <a href="{{ back_url }}" class="btn btn-akabat-outline">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+    <a href="{{ next_url }}" class="btn btn-akabat">
+      Next <i class="bi bi-arrow-right"></i>
+    </a>
+  </div>
+</div>
+{% endblock %}
