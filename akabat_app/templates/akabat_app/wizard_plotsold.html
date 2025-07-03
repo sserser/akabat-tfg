@@ -165,10 +165,11 @@
   </div>
 
   <div class="mt-4 text-end">
-    <button class="btn btn-primary d-flex align-items-center gap-2" id="apply-filters">
+    <button class="btn btn-primary d-flex align-items-center gap-2" id="apply-filters" disabled>
       <span>Apply Filters</span>
       <span id="apply-filters-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
     </button>
+
 
   </div>
 </div>
@@ -213,11 +214,16 @@
 
 
 <script>
+  let currentGraphName = null;
 document.addEventListener("DOMContentLoaded", function () {
   const filterPanel = document.getElementById("filter-panel");
   const toggleFiltersBtn = document.getElementById("toggle-filters");
   const toggleLegend = document.getElementById("toggle-legend");
   const applyBtn = document.getElementById("apply-filters");
+  function enableApplyButton() {
+    applyBtn.disabled = false;
+  }
+
   let plotId = null;
 
   toggleFiltersBtn.addEventListener("click", () => {
@@ -235,45 +241,41 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   window.getGeneralFiltersQuery = function () {
-    const getValues = (id) => {
-      const el = document.getElementById(id);
-      return el && el.tomselect ? el.tomselect.getValue() : [];
-    };
-    const toQuery = (key, values) => values.length ? `&${key}=${encodeURIComponent(values.join(","))}` : "";
-
-    const layoutSelect = document.getElementById("select-layout");
-    const layoutContainer = document.getElementById("layout-container");
-    let layoutParam = "";
-    if (!layoutContainer.classList.contains("d-none")) {
-      layoutParam = `&layout=${encodeURIComponent(layoutSelect.value)}`;
-    }
-
-    return [
-      toQuery("years", getValues("select-years")),
-      toQuery("keywords", getValues("select-keywords")),
-      toQuery("keyword_groups", getValues("select-keyword-groups")),
-      toQuery("authors", getValues("select-authors")),
-      toQuery("author_groups", getValues("select-author-groups")),
-      layoutParam,
-      `&showlegend=${toggleLegend.checked ? 1 : 0}`
-    ].join("");
+  const getValues = (id) => {
+    const el = document.getElementById(id);
+    return el && el.tomselect ? el.tomselect.getValue() : [];
   };
+  const toQuery = (key, values) => values.length ? `&${key}=${encodeURIComponent(values.join(","))}` : "";
+
+
+  let layoutParam = "";
+  const layoutContainer = document.getElementById("layout-container");
+  const layoutSelect = document.getElementById("select-layout");
+  if (layoutContainer && !layoutContainer.classList.contains("d-none") && layoutSelect) {
+    layoutParam = `&layout=${encodeURIComponent(layoutSelect.value)}`;
+  }
+
+  return [
+    toQuery("years", getValues("select-years")),
+    toQuery("keywords", getValues("select-keywords")),
+    toQuery("keyword_groups", getValues("select-keyword-groups")),
+    toQuery("authors", getValues("select-authors")),
+    toQuery("author_groups", getValues("select-author-groups")),
+    layoutParam,
+    `&showlegend=${toggleLegend.checked ? 1 : 0}`
+  ].join("");
+};
 
 
   applyBtn.addEventListener("click", () => {
-    const activeBtn = document.querySelector("button[data-graph-name].active");
-    if (!activeBtn) {
-      alert("⚠️ Please select a graph first!");
+    if (!currentGraphName) {
+      alert("⚠️ Please select and load a graph first!");
       return;
     }
 
-    const graphName = activeBtn.dataset.graphName;
-
-    // ✔️ Mostrar spinner en botón
     document.getElementById("apply-filters-spinner").classList.remove("d-none");
 
-    // ✔️ Llamar a reload y ocultar spinner al terminar
-    reloadGraph(graphName)
+    reloadGraph(currentGraphName)
       .finally(() => {
         document.getElementById("apply-filters-spinner").classList.add("d-none");
       });
@@ -281,25 +283,27 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 
+
   function populateSelect(id, values) {
-    const select = document.getElementById(id);
-    if (!select) return;
+  const select = document.getElementById(id);
+  if (!select) return;
 
-    select.innerHTML = "";
-    values.forEach(val => {
-      const opt = document.createElement("option");
-      opt.value = val;
-      opt.text = val;
-      select.appendChild(opt);
-    });
+  select.innerHTML = "";
+  values.forEach(val => {
+    const opt = document.createElement("option");
+    opt.value = val;
+    opt.text = val;
+    select.appendChild(opt);
+  });
 
-    new TomSelect(select, {
-      plugins: ['remove_button'],
-      maxOptions: 1000,
-      closeAfterSelect: false,
-      placeholder: select.getAttribute("placeholder") || "",
-    });
-  }
+  new TomSelect(select, {
+    plugins: ['remove_button'],
+    maxOptions: 1000,
+    closeAfterSelect: false,
+    placeholder: select.getAttribute("placeholder") || "",
+  });
+}
+
 
   // Load filters from backend
   fetch("/akabat/get_filter_options/")
@@ -502,111 +506,107 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   window.reloadGraph = function reloadGraph(graphName) {
-  const graphContainer = document.querySelector(".graph-container");
-  const threshold = getThresholdValue();
-  const topN = getTopNValue();
-  let url = `/akabat/load_plot/${graphName}/?threshold=${threshold}` + getGeneralFiltersQuery();
+    const graphContainer = document.querySelector(".graph-container");
+    const threshold = getThresholdValue();
+    const topN = getTopNValue();
+    let url = `/akabat/load_plot/${graphName}/?threshold=${threshold}` + getGeneralFiltersQuery();
 
-  if (graphName === "bubble" && topN > 0) {
-    url += `&top_n=${topN}`;
-  }
+    if (graphName === "bubble" && topN > 0) {
+      url += `&top_n=${topN}`;
+    }
 
-  if (graphName === "heatmap") {
-    const freq = getFreqValue();
-    url += `&min_freq=${freq}`;
-  }
+    if (graphName === "heatmap") {
+      const freq = getFreqValue();
+      url += `&min_freq=${freq}`;
+    }
 
-  graphContainer.innerHTML = `
-    <div class="d-flex justify-content-center align-items-center" style="height: 600px;">
-      <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
-    </div>`;
+    graphContainer.innerHTML = `
+      <div class="d-flex justify-content-center align-items-center" style="height: 600px;">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+      </div>`;
 
-  fetch(url)
-    .then(res => res.json())
-    .then(json => {
-      if (json.error) {
-        console.warn("⚠️ Backend returned error:", json.error);
-        graphContainer.innerHTML = `
-          <div class="alert alert-warning text-center mt-5">
-            <strong>⚠️ Cannot generate this graph:</strong><br>${json.error}
-          </div>`;
-        return;
-      }
-
-      const plotId = "plot-" + graphName;
-      graphContainer.innerHTML = `<div id="${plotId}" style="width: 100%; height: 700px; max-width: 100%;"></div>`;
-
-      try {
-        if (json.frames) {
-          Plotly.newPlot(plotId, json.data, json.layout, {
-            ...json.config,
-            scrollZoom: true
-          }).then(() => {
-            Plotly.addFrames(plotId, json.frames);
-            Plotly.animate(plotId, null, {
-              frame: { duration: 500, redraw: true },
-              transition: { duration: 300 },
-            });
-          });
-        } else {
-          Plotly.newPlot(plotId, json.data, json.layout, {
-            ...json.config,
-            scrollZoom: true
-          });
+    fetch(url)
+      .then(res => res.json())
+      .then(json => {
+        if (json.error) {
+          console.warn("⚠️ Backend returned error:", json.error);
+          graphContainer.innerHTML = `
+            <div class="alert alert-warning text-center mt-5">
+              <strong>⚠️ Cannot generate this graph:</strong><br>${json.error}
+            </div>`;
+          return;
         }
-      } catch (e) {
-        console.error("⚠️ Error al renderizar el gráfico con Plotly:", e);
-        graphContainer.innerHTML = "<div class='text-danger text-center mt-5'>Error loading graph (render error).</div>";
-      }
-    })
-    .catch((err) => {
-      console.error("❌ Error al obtener datos del backend:", err);
-      graphContainer.innerHTML = "<div class='text-danger text-center mt-5'>Error loading graph (fetch error).</div>";
-    });
-}
 
+        const plotId = "plot-" + graphName;
+        graphContainer.innerHTML = `<div id="${plotId}" style="width: 100%; height: 700px; max-width: 100%;"></div>`;
+
+        try {
+          if (json.frames) {
+            Plotly.newPlot(plotId, json.data, json.layout, {
+              ...json.config,
+              scrollZoom: true
+            }).then(() => {
+              Plotly.addFrames(plotId, json.frames);
+              Plotly.animate(plotId, null, {
+                frame: { duration: 500, redraw: true },
+                transition: { duration: 300 },
+              });
+            });
+          } else {
+            Plotly.newPlot(plotId, json.data, json.layout, {
+              ...json.config,
+              scrollZoom: true
+            });
+          }
+        } catch (e) {
+          console.error("⚠️ Error al renderizar el gráfico con Plotly:", e);
+          graphContainer.innerHTML = "<div class='text-danger text-center mt-5'>Error loading graph (render error).</div>";
+        }
+      })
+      .catch((err) => {
+        console.error("❌ Error al obtener datos del backend:", err);
+        graphContainer.innerHTML = "<div class='text-danger text-center mt-5'>Error loading graph (fetch error).</div>";
+      });
+  }
 
   thresholdInput.addEventListener("input", () => {
     thresholdLabel.textContent = `Current: ≥ ${getThresholdValue()}`;
   });
 
   thresholdInput.addEventListener("change", () => {
-    const activeBtn = document.querySelector("button[data-graph-name].active");
-    const currentGraph = activeBtn?.dataset.graphName;
-    if (currentGraph === "author_cluster" || currentGraph === "coauthors") {
-      reloadGraph(currentGraph);
+    if (currentGraphName === "author_cluster" || currentGraphName === "coauthors") {
+      reloadGraph(currentGraphName);
     }
   });
+
 
   topnInput.addEventListener("input", () => {
     topnLabel.textContent = `Current: ${getTopNValue()}`;
   });
 
   topnInput.addEventListener("change", () => {
-    const activeBtn = document.querySelector("button[data-graph-name].active");
-    if (activeBtn?.dataset.graphName === "bubble") {
+    if (currentGraphName === "bubble") {
       reloadGraph("bubble");
     }
   });
+
 
   freqInput.addEventListener("input", () => {
     freqLabel.textContent = `Min: ≥ ${getFreqValue()}`;
   });
 
   freqInput.addEventListener("change", () => {
-    const activeBtn = document.querySelector("button[data-graph-name].active");
-    if (activeBtn?.dataset.graphName === "heatmap") {
+    if (currentGraphName === "heatmap") {
       reloadGraph("heatmap");
     }
   });
 
   layoutSelect.addEventListener("change", () => {
-    const activeBtn = document.querySelector("button[data-graph-name].active");
-    if (activeBtn?.dataset.graphName === "coauthors" || activeBtn?.dataset.graphName === "author_cluster") {
-      reloadGraph(activeBtn.dataset.graphName);
+    if (currentGraphName === "coauthors" || currentGraphName === "author_cluster") {
+      reloadGraph(currentGraphName);
     }
-
   });
+
 
   buttons.forEach((btn) => {
     btn.addEventListener("click", function () {
@@ -614,15 +614,19 @@ document.addEventListener("DOMContentLoaded", function () {
       btn.classList.add("active");
 
       const graphName = btn.dataset.graphName;
+      currentGraphName = graphName; 
+      enableApplyButton();
 
       thresholdContainer.classList.toggle("d-none", !(graphName === "author_cluster" || graphName === "coauthors"));
       layoutContainer.classList.toggle("d-none", !(graphName === "coauthors" || graphName === "author_cluster"));
       topnContainer.classList.toggle("d-none", graphName !== "bubble");
       freqContainer.classList.toggle("d-none", graphName !== "heatmap");
 
-      reloadGraph(graphName);
+      window.reloadGraph(graphName);  
     });
   });
+
+
 });
 </script>
 {% endblock %}

@@ -31,7 +31,7 @@
                 <div class="mb-3">
                   <input type="file" name="csv_files" accept=".csv" multiple class="form-control">
                 </div>
-                <button type="submit" class="btn btn-akabat">Upload CSVs</button>
+                <button type="submit" class="btn btn-akabat">Upload CSV</button>
               </form>
             </div>
           </div>
@@ -254,33 +254,35 @@
         </div>
         <div class="modal-body">
           <input type="hidden" name="edit_id" id="modal-csv-id">
+            {% for field in column_fields %}
+              <div class="mb-2">
+                <label class="form-label">
+                  {{ field|capfirst }}
+                  {% if field in required_fields %}<span class="text-danger">*</span>{% endif %}
+                </label>
 
-          {% for field in column_fields %}
-            <div class="mb-2">
-              <label class="form-label">
-                {{ field|capfirst }}
-                {% if field in required_fields %}<span class="text-danger">*</span>{% endif %}
-              </label>
-
-              {% if field in required_fields %}
-                <input
-                  name="{{ field }}"
-                  class="form-control"
-                  placeholder="Column name"
-                  data-required="True"
-                >
-
-              {% else %}
-                <input
-                  name="{{ field }}"
-                  class="form-control"
-                  placeholder="Column name"
-                  data-required="False"
-                >
-              {% endif %}
-            </div>
-          {% endfor %}
-
+                {% if field == "delimiter" %}
+                  <select name="delimiter" class="form-select" required>
+                    <option value=",">Comma (,)</option>
+                    <option value=";">Semicolon (;)</option>
+                  </select>
+                {% elif field in required_fields %}
+                  <input
+                    name="{{ field }}"
+                    class="form-control"
+                    placeholder="Column name"
+                    data-required="True"
+                  >
+                {% else %}
+                  <input
+                    name="{{ field }}"
+                    class="form-control"
+                    placeholder="Column name"
+                    data-required="False"
+                  >
+                {% endif %}
+              </div>
+            {% endfor %}
         </div>
         <div class="modal-footer">
           <button type="submit" class="btn btn-akabat" id="modal-save-button" disabled>Save</button>

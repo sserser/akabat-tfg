@@ -64,7 +64,7 @@ class PlotGenerator:
         category_column_name: str,
         plot_folder: str,
         filename: str = "polar_plot.pdf",
-        cluster_keywords: Dict[str, List[str]] = None
+        cluster_keywords: Dict[str, List[str]] = None, width: int = 1100, height: int = 650
     ) -> go.Figure:
 
         if cluster_keywords:
@@ -85,8 +85,8 @@ class PlotGenerator:
             template="seaborn",
             color_discrete_sequence=colors,
             custom_data=["keywords_in_cluster"],
-            width=1100,
-            height=650
+            width=width,
+            height=height
         )
 
         fig.update_traces(
@@ -112,7 +112,8 @@ class PlotGenerator:
         save_image: bool = False,
         cluster_keywords: Dict[str, List[str]] = None,
         title1: str = "Left Polar",
-        title2: str = "Right Polar"
+        title2: str = "Right Polar",
+        width: int = 1100, height: int = 650
     ) -> go.Figure:
         """
         Double polar plot to compare two different periods of time
@@ -158,8 +159,8 @@ class PlotGenerator:
         fig.update_layout(
             title_text="Polar Comparison of Categories",
             title_x=0.5,
-            height=600,
-            width=1200,
+            height=height,
+            width=width,
             margin=dict(t=100)
         )
 
@@ -174,11 +175,14 @@ class PlotGenerator:
     def generate_polar_comparison_graph_split_years(
         raw_df: pd.DataFrame,
         db_handler,
-        cluster_keywords: Dict[str, List[str]] = None
+        cluster_keywords: Dict[str, List[str]] = None,
+        width: int = 1100,
+        height: int = 650
     ) -> go.Figure:
         """
         Divides years with data in two periods
         """
+
         # Obtain data per category and year
         df_all_raw = db_handler.query_count_unique_papers_per_group_per_year()
         df_all = df_all_raw.rename(columns=lambda x: x.split("_")[-1] if x.startswith("paper_count_") else x)
@@ -212,6 +216,7 @@ class PlotGenerator:
         print(f"[DEBUG] Años únicos disponibles: {unique_years}")
         print(df1, "df1")
         print(df2, "df2")
+
         return PlotGenerator.plot_polars(
             df1=df1,
             df2=df2,
@@ -220,11 +225,14 @@ class PlotGenerator:
             cluster_keywords=cluster_keywords,
             title1=f"Años: {', '.join(years_1)}",
             title2=f"Años: {', '.join(years_2)}",
-            save_image=False
+            save_image=False,
+            width=width,
+            height=height
         )
 
+
     @staticmethod
-    def plot_lines(df: pd.DataFrame, category_column_name: str, plot_folder: str, filename: str = "lines_plot.pdf", colors=None):
+    def plot_lines(df: pd.DataFrame, category_column_name: str, plot_folder: str, filename: str = "lines_plot.pdf", colors=None, width: int = 1100, height: int = 650):
         print("lines")
         if colors is None:
             colors = PlotGenerator.get_color_palette(df, category_column_name)
@@ -232,7 +240,7 @@ class PlotGenerator:
             df, x="year", y="count", color=category_column_name, markers=True,
             color_discrete_sequence=colors,
             labels={"year": "Year", "count": "Number of papers"},
-            width=1100, height=650
+            width=width, height=height
         )
         fig.update_layout(title_text="Year evolution per group category")
         out = Path(plot_folder)
@@ -241,14 +249,14 @@ class PlotGenerator:
         return fig
 
     @staticmethod
-    def plot_log_lines(df: pd.DataFrame, category_column_name: str, plot_folder: str, filename: str = "log_lines_plot.pdf", colors=None):
+    def plot_log_lines(df: pd.DataFrame, category_column_name: str, plot_folder: str, filename: str = "log_lines_plot.pdf", colors=None, width: int = 1100, height: int = 650):
         if colors is None:
             colors = PlotGenerator.get_color_palette(df, category_column_name)
         fig = px.line(
             df, x="year", y="count", color=category_column_name, markers=True,
             color_discrete_sequence=colors, log_y=True,
             labels={"year": "Year", "count": "Number of papers"},
-            width=1100, height=650
+            width=width, height=height
         )
         fig.update_layout(title_text="Logaritmic evolution per group category")
         out = Path(plot_folder)
@@ -271,38 +279,60 @@ class PlotGenerator:
 
 
     @staticmethod
-    def generate_interactive_country_map(df: pd.DataFrame, save_file_path_pdf: str) -> px.choropleth:
+    def generate_interactive_country_map(
+        df: pd.DataFrame,
+        save_file_path_pdf: str,
+        width: int = 1100,
+        height: int = 650
+    ) -> px.choropleth:
         if "country" not in df.columns or "publication_year" not in df.columns:
             raise KeyError("Columns 'Country' and 'Publication_Year' are required to display this graph.")
 
-        # Extract country name
+        # Limpieza y extracción de nombre de país
         df["country_clean"] = df["country"].str.extract(r'([A-Za-z\s]+)$').fillna(df["country"])
         df["country_clean"] = df["country_clean"].str.strip()
 
+        # Crear la grilla completa: todos los países × todos los años
+        all_years = pd.DataFrame({
+            "year": range(df["publication_year"].min(), df["publication_year"].max() + 1)
+        })
+        all_countries = pd.DataFrame({
+            "country_clean": df["country_clean"].dropna().unique()
+        })
+        full_grid = all_countries.merge(all_years, how="cross")
+
+        # Agrupar datos reales
         grouped = (
-            df.groupby(["country_clean", "publication_year"])
+            df[df["country"].notna() & (df["country"].str.strip() != "")]
+            .groupby(["country_clean", "publication_year"])
             .size()
             .reset_index(name="count")
             .rename(columns={"publication_year": "year"})
         )
 
-        # Normalize and order
-        grouped["norm_count"] = grouped.groupby("year")["count"].transform(lambda x: x / x.sum())
-        grouped = grouped.sort_values(by=["year", "country_clean"])
+        merged = full_grid.merge(grouped, on=["country_clean", "year"], how="left")
+        merged["count"] = merged["count"].fillna(0)
 
+        # Normalizar por año
+        merged["norm_count"] = merged.groupby("year")["count"].transform(
+            lambda x: x / x.sum() if x.sum() > 0 else 0
+        )
 
-        # Colors defined
+        merged["year"] = merged["year"].astype(int)
+        merged = merged.sort_values(by=["year", "country_clean"])
+
         color_scale = [
-            [0.00, "#e6f5ec"],
-            [0.33, "#94d0ac"],
-            [0.66, "#3ca86b"],
-            [1.00, "#1f7744"]
+            [0.00, "#ffffff"],   # Blanco puro para 0
+            [0.20, "#e0f7e9"],   # Verde muy pálido
+            [0.40, "#b3e2cc"],   # Verde claro
+            [0.60, "#66c2a4"],   # Verde medio
+            [0.80, "#2ca25f"],   # Verde más intenso
+            [1.00, "#006d2c"]    # Verde oscuro
         ]
-        grouped = grouped.sort_values(by=["year", "country_clean"])
 
-        # Create interactive graph
+        # Crear gráfico interactivo
         fig = px.choropleth(
-            grouped,
+            merged,
             locations="country_clean",
             locationmode="country names",
             color="norm_count",
@@ -315,7 +345,7 @@ class PlotGenerator:
                 "country_clean": False
             },
             color_continuous_scale=color_scale,
-            range_color=(0, grouped["norm_count"].max()),
+            range_color=(0, merged["norm_count"].max()),
             labels={
                 "count": "Publications",
                 "norm_count": "Fraction",
@@ -324,22 +354,27 @@ class PlotGenerator:
             title="Proportion of Publications by Country Over Time"
         )
 
-        fig.update_geos(showframe=False, showcoastlines=True, projection_type='equirectangular')
+        fig.update_geos(
+            showframe=False,
+            showcoastlines=True,
+            projection_type='equirectangular'
+        )
         fig.update_layout(
-            width=1100,
-            height=650,
+            width=width,
+            height=height,
             margin=dict(l=50, r=50, t=80, b=50),
-            coloraxis_colorbar=dict(title="Frac.")
+            coloraxis_colorbar=dict(title="Fraction")
         )
 
         Path(save_file_path_pdf).parent.mkdir(parents=True, exist_ok=True)
         fig.write_image(save_file_path_pdf)
+
         return fig
 
 
 
     @staticmethod
-    def generate_cumulative_country_map(df: pd.DataFrame, save_file_path_pdf: str  = None ) -> px.choropleth:
+    def generate_cumulative_country_map(df: pd.DataFrame, save_file_path_pdf: str  = None, width: int = 1100, height: int = 650 ) -> px.choropleth:
         if "country" not in df.columns or "publication_year" not in df.columns:
             raise KeyError("Columns 'Country' and 'Publication_Year' are required to display this graph.")
 
@@ -366,12 +401,13 @@ class PlotGenerator:
         merged["cumulative_count"] = merged.groupby("country_clean")["count"].cumsum()
 
         color_scale = [
-            [0.00, "#e6f5ec"],
-            [0.33, "#94d0ac"],
-            [0.66, "#3ca86b"],
-            [1.00, "#1f7744"]
+            [0.00, "#ffffff"],   # Blanco puro para 0
+            [0.20, "#e0f7e9"],   # Verde muy pálido
+            [0.40, "#b3e2cc"],   # Verde claro
+            [0.60, "#66c2a4"],   # Verde medio
+            [0.80, "#2ca25f"],   # Verde más intenso
+            [1.00, "#006d2c"]    # Verde oscuro
         ]
-
         fig = px.choropleth(
             merged,
             locations="country_clean",
@@ -395,8 +431,8 @@ class PlotGenerator:
 
         fig.update_geos(showframe=False, showcoastlines=True, projection_type='equirectangular')
         fig.update_layout(
-            width=1100,
-            height=650,
+            width=width,
+            height=height,
             margin=dict(l=50, r=50, t=80, b=50),
             coloraxis_colorbar=dict(title="Publications")
         )
@@ -413,7 +449,10 @@ class PlotGenerator:
         author_clusters: dict,
         author_citations_map: dict,
         save_path_html: str = None,
-        threshold: float = 0.0
+        threshold: float = 0.0,
+        layout: str = "spring",
+        width: int = 1100,
+        height: int = 650
     ) -> go.Figure:
         import heapq
 
@@ -470,7 +509,20 @@ class PlotGenerator:
             iterations = 100
             k_value = 0.7
 
-        pos = nx.spring_layout(G, k=k_value, iterations=iterations, seed=42)
+        if layout == "spring":
+            pos = nx.spring_layout(G, k=k_value, iterations=iterations, seed=42)
+        elif layout == "circular":
+            pos = nx.circular_layout(G)
+        elif layout == "kamada_kawai":
+            pos = nx.kamada_kawai_layout(G)
+        elif layout == "shell":
+            pos = nx.shell_layout(G)
+        elif layout == "spectral":
+            pos = nx.spectral_layout(G)
+        else:
+            print(f"[WARNING] Unknown layout '{layout}', falling back to spring_layout")
+            pos = nx.spring_layout(G, k=k_value, iterations=iterations, seed=42)
+
         x_nodes = [pos[k][0] for k in G.nodes()]
         y_nodes = [pos[k][1] for k in G.nodes()]
 
@@ -534,10 +586,10 @@ class PlotGenerator:
 
         fig = go.Figure(data=[edge_trace, node_trace])
         fig.update_layout(
-            title="Authors Semantic Clustering",
+            title=f"Authors Semantic Clustering ({layout} layout)",
             titlefont=dict(size=20),
-            width=1100,
-            height=650,
+            width=width,
+            height=height,
             showlegend=False,
             hovermode="closest",
             margin=dict(b=20, l=20, r=20, t=80),
@@ -553,7 +605,7 @@ class PlotGenerator:
         return fig
 
 
-    def generate_top_keywords_bubble_chart(self, author_clusters: dict, author_kw_map: dict, top_n: int = None) -> go.Figure:
+    def generate_top_keywords_bubble_chart(self, author_clusters: dict, author_kw_map: dict, top_n: int = None, width: int = 1100, height: int = 650) -> go.Figure:
         bubble_data = []
         for cluster, data in author_clusters.items():
             counter = Counter()
@@ -587,8 +639,8 @@ class PlotGenerator:
             color="Cluster",
             size_max=60,
             title="Top Keywords per Cluster of Authors",
-            width=1300,
-            height=850
+            width=width,
+            height=height
         )
 
         fig.update_traces(
@@ -606,7 +658,7 @@ class PlotGenerator:
         author_clusters: dict,
         author_kw_map: dict,
         save_path_html: str = None,
-        min_freq: int = 0 
+        min_freq: int = 0, width: int = 1100, height: int = 650
     ) -> go.Figure:
 
         heatmap_data = {}
@@ -651,8 +703,8 @@ class PlotGenerator:
             xaxis_title="Cluster",
             yaxis_title="Keyword",
             autosize=False,
-            width=1100,
-            height=650,
+            width=width,
+            height=height,
             margin=dict(l=100, r=100, t=80, b=80),
             xaxis_tickangle=45,
             font=dict(size=10),
@@ -688,7 +740,9 @@ class PlotGenerator:
     @staticmethod
     def generate_citation_heatmap_by_country(
         df: pd.DataFrame,
-        save_path_html: str = None
+        save_path_html: str = None,
+        width: int = 1100,
+        height: int = 650
     ) -> go.Figure:
 
         if "country" not in df.columns or "citations" not in df.columns or "publication_year" not in df.columns:
@@ -698,7 +752,16 @@ class PlotGenerator:
         df["country_clean"] = df["country"].str.extract(r'([A-Za-z\s]+)$').fillna(df["country"])
         df["country_clean"] = df["country_clean"].str.strip()
 
-        # Agrupar por país y año
+        # Crear grilla completa: todos los países × todos los años
+        all_years = pd.DataFrame({
+            "year": range(df["publication_year"].min(), df["publication_year"].max() + 1)
+        })
+        all_countries = pd.DataFrame({
+            "country_clean": df["country_clean"].dropna().unique()
+        })
+        full_grid = all_countries.merge(all_years, how="cross")
+
+        # Agrupar datos reales
         grouped = (
             df[df["country"].notna() & (df["country"].str.strip() != "")]
             .groupby(["country_clean", "publication_year"])["citations"]
@@ -707,22 +770,30 @@ class PlotGenerator:
             .rename(columns={"publication_year": "year"})
         )
 
-        # Normalizar por año y ordenar
-        grouped["norm_citations"] = grouped.groupby("year")["citations"].transform(lambda x: x / x.sum())
-        grouped["year"] = grouped["year"].astype(int)
-        grouped = grouped.sort_values(by=["year", "country_clean"])
+        # Mezclar con la grilla para forzar todos los años y países
+        merged = full_grid.merge(grouped, on=["country_clean", "year"], how="left")
+        merged["citations"] = merged["citations"].fillna(0)
 
-        # Escala de color mejorada
+        # Normalizar por año
+        merged["norm_citations"] = merged.groupby("year")["citations"].transform(
+            lambda x: x / x.sum() if x.sum() > 0 else 0
+        )
+
+        merged["year"] = merged["year"].astype(int)
+        merged = merged.sort_values(by=["year", "country_clean"])
+
+        # Escala de color profesional
         color_scale = [
-            [0.00, "#e6f5ec"],
-            [0.33, "#94d0ac"],
-            [0.66, "#3ca86b"],
-            [1.00, "#1f7744"]
+            [0.00, "#ffffff"],   # Blanco puro para 0
+            [0.20, "#e0f7e9"],   # Verde muy pálido
+            [0.40, "#b3e2cc"],   # Verde claro
+            [0.60, "#66c2a4"],   # Verde medio
+            [0.80, "#2ca25f"],   # Verde más intenso
+            [1.00, "#006d2c"]    # Verde oscuro
         ]
-
         # Crear gráfico
         fig = px.choropleth(
-            grouped,
+            merged,
             locations="country_clean",
             locationmode="country names",
             color="norm_citations",
@@ -735,7 +806,7 @@ class PlotGenerator:
             },
             animation_frame="year",
             color_continuous_scale=color_scale,
-            range_color=(0, grouped["norm_citations"].max()),
+            range_color=(0, merged["norm_citations"].max()),
             labels={
                 "norm_citations": "Fraction",
                 "citations": "Citations",
@@ -750,8 +821,8 @@ class PlotGenerator:
             projection_type='equirectangular'
         )
         fig.update_layout(
-            width=1100,
-            height=600,
+            width=width,
+            height=height,
             margin=dict(l=50, r=50, t=80, b=50),
             coloraxis_colorbar=dict(title="Frac."),
             geo=dict(showcountries=True),
@@ -763,10 +834,11 @@ class PlotGenerator:
 
         return fig
 
+
     @staticmethod
     def generate_cumulative_citation_map_by_country(
         df: pd.DataFrame,
-        save_path_html: str = None
+        save_path_html: str = None, width: int = 1100, height: int = 650
     ) -> go.Figure:
 
         if "country" not in df.columns or "citations" not in df.columns or "publication_year" not in df.columns:
@@ -795,12 +867,13 @@ class PlotGenerator:
         merged["cumulative_citations"] = merged.groupby("country_clean")["citations"].cumsum()
 
         color_scale = [
-            [0.00, "#e6f5ec"],
-            [0.33, "#94d0ac"],
-            [0.66, "#3ca86b"],
-            [1.00, "#1f7744"]
+            [0.00, "#ffffff"],   # Blanco puro para 0
+            [0.20, "#e0f7e9"],   # Verde muy pálido
+            [0.40, "#b3e2cc"],   # Verde claro
+            [0.60, "#66c2a4"],   # Verde medio
+            [0.80, "#2ca25f"],   # Verde más intenso
+            [1.00, "#006d2c"]    # Verde oscuro
         ]
-
         fig = px.choropleth(
             merged,
             locations="country_clean",
@@ -828,8 +901,8 @@ class PlotGenerator:
             projection_type='equirectangular'
         )
         fig.update_layout(
-            width=1100,
-            height=600,
+            width=width,
+            height=height,
             margin=dict(l=50, r=50, t=80, b=50),
             coloraxis_colorbar=dict(title="Citations"),
             geo=dict(showcountries=True),
@@ -845,10 +918,10 @@ class PlotGenerator:
     def generate_interactive_coauthorship_graph(
         raw_df: pd.DataFrame,
         save_file_path_pdf: str,
-        width: int = 7,
-        height: int = 7,
+        width: int = 1100, height: int = 650,
         top_label_threshold: float = 0.9,
-        threshold: float = 0.0
+        threshold: float = 0.0,
+        layout: str = "spring"  # Nuevo parámetro
     ) -> go.Figure:
 
         def split_authors(s: str) -> list[str]:
@@ -859,6 +932,7 @@ class PlotGenerator:
         df = raw_df.copy()
         df["_authors_"] = df["author"].apply(split_authors)
 
+        # Construir grafo
         G = nx.Graph()
         for authors in df["_authors_"]:
             for a in authors:
@@ -870,8 +944,22 @@ class PlotGenerator:
                     w = G[u][v]["weight"] + 1 if G.has_edge(u, v) else 1
                     G.add_edge(u, v, weight=w)
 
-        pos = nx.spring_layout(G, seed=42, k=1.2, iterations=100)
+        # Elegir layout
+        if layout == "spring":
+            pos = nx.spring_layout(G, seed=42, k=1.2, iterations=100)
+        elif layout == "circular":
+            pos = nx.circular_layout(G)
+        elif layout == "kamada_kawai":
+            pos = nx.kamada_kawai_layout(G)
+        elif layout == "shell":
+            pos = nx.shell_layout(G)
+        elif layout == "spectral":
+            pos = nx.spectral_layout(G)
+        else:
+            print(f"[WARNING] Unknown layout '{layout}', falling back to spring_layout")
+            pos = nx.spring_layout(G, seed=42, k=1.2, iterations=100)
 
+        # Filtrar nodos por threshold
         node_x, node_y, node_text, node_size, node_color, node_label = [], [], [], [], [], []
         visible_nodes_set = set()
         degrees = dict(G.degree())
@@ -884,16 +972,17 @@ class PlotGenerator:
             norm_deg = deg / maxdeg
 
             if norm_deg < threshold:
-                continue  # Filter nodes below threshold
+                continue
 
             visible_nodes_set.add(n)
             node_x.append(x)
             node_y.append(y)
-            node_text.append(f"{n}<br>#papers: {papers}<br>Conections: {deg}")
+            node_text.append(f"{n}<br>#papers: {papers}<br>Connections: {deg}")
             node_size.append(min(20 + papers * 2, 60))
             node_color.append(norm_deg)
             node_label.append(n if norm_deg >= top_label_threshold else "")
 
+        # Construir aristas
         edge_x, edge_y = [], []
         for u, v in G.edges():
             if u not in visible_nodes_set or v not in visible_nodes_set:
@@ -903,6 +992,7 @@ class PlotGenerator:
             edge_x += [x0, x1, None]
             edge_y += [y0, y1, None]
 
+        # Crear figura Plotly
         edge_trace = go.Scatter(
             x=edge_x, y=edge_y,
             mode="lines",
@@ -930,10 +1020,10 @@ class PlotGenerator:
 
         fig = go.Figure(data=[edge_trace, node_trace])
         fig.update_layout(
-            title="Co-authorship Network",
+            title=f"Co-authorship Network ({layout} layout)",
             title_font=dict(size=20),
-            width=1100,
-            height=650,
+            width=width,
+            height=height,
             showlegend=False,
             margin=dict(l=20, r=20, t=60, b=20),
             xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),

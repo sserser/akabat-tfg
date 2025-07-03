@@ -181,6 +181,12 @@
     <img src="{% static 'logonotbackgound.png' %}" alt="Akabat Logo" style="height: 42px;">
     </div>
 
+    <!-- Home button in upper right part -->
+    <a href="/akabat" class="btn btn-akabat-outline rounded-circle"
+    style="position: absolute; top: -45px; right: 20px; z-index: 1000; width: 42px; height: 42px; padding: 0; display: flex; align-items: center; justify-content: center;">
+    <i class="bi bi-house-fill"></i>
+    </a>
+
     {% for step_char in "123456789" %}
         {% with step_num=forloop.counter %}
         <div class="wizard-step {% if step_num < current_step %}completed{% elif step_num == current_step %}active{% else %}disabled{% endif %}">

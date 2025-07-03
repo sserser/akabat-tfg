@@ -27,6 +27,7 @@ class UserPreferences:
         self.plot_folder: str = None
         self.excluded_starting_by_keywords_at_csv_import: list[str] = []
         self.csv_import_column_mappings_by_file = {}  
+        self.csv_separators_by_file = {}
         self.excluded_keywords_at_csv_import: list[str] = []
         self.excluded_contains_keywords_at_csv_import: list[str] = []
         self.excluded_keywords_in_plot: list[str] = []
@@ -221,10 +222,12 @@ class PaperLoader:
         self,
         folder_path: str,
         import_column_mappings_by_file: dict[str, str],
+        separators_by_file: dict[str, str],
         keyword_separator: str = ";",
         separator: str = ",",
         header: int = 0,
     ) -> list[pd.DataFrame]:
+
         csvs = []
         for file_path in os.listdir(folder_path): ##Iterates over all csv files
             if file_path.endswith(".csv"):
@@ -232,6 +235,9 @@ class PaperLoader:
                 col_map = import_column_mappings_by_file.get(file_path, {})
                 if not col_map:
                     continue
+                print(f"Processing file: {file_path}")
+                separator = separators_by_file.get(file_path.lower(), ",")
+
                 df = self.import_csv( ##For each csv, calls function import_csv
                         file_path=path,
                         import_columns_names=col_map,
@@ -259,12 +265,23 @@ class PaperLoader:
         if not kw_original_col:
             raise KeyError("Column 'keywords' not found.")
         expected_cols = list(import_columns_names.keys())
-        df_raw = pd.read_csv(
-            file_path,
-            sep=separator,
-            header=header,
-            encoding="utf-8-sig"
-        )
+        print(f"FILE: {file_path}")
+        print(f"KEY USED: {os.path.basename(file_path).lower()}")
+        print(f"SEPARATOR FROM MAP: {separator}")
+
+        try:
+            df_raw = pd.read_csv(
+                file_path,
+                sep=separator,
+                header=header,
+                encoding="utf-8-sig"
+            )
+        except pd.errors.ParserError as e:
+            raise ValueError(
+                f"ParserError while reading '{os.path.basename(file_path)}': {e}. "
+                f"Check if the chosen separator ('{separator}') matches the file format."
+            )
+
         missing_cols = [col for col in expected_cols if col not in df_raw.columns]
         if missing_cols:
             raise ValueError(

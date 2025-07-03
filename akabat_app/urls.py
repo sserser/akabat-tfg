@@ -18,7 +18,8 @@ from .views import (
     resume_project_view, 
     project_list_view,
     review_import_view,
-    get_filter_options
+    get_filter_options,
+    save_plot
 )
 
 urlpatterns = [
@@ -40,5 +41,6 @@ urlpatterns = [
     path("continue/", continue_project_view, name="continue_project"),   
     path("projects/", project_list_view, name="project_list"),
     path("get_filter_options/", get_filter_options, name="get_filter_options"),
+    path('save_plot/', save_plot, name='save_plot'),
 
 ]

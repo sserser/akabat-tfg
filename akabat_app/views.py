@@ -116,6 +116,7 @@ def resume_project_view(request, project_id):
     step_to_view= {
         "import_csv": "upload_csv", 
         "preferences": "preferences",
+        "process_keywords": "process_keywords",
         "group_semantic": "group_semantic",
         "cluster_authors": "cluster_authors",
         "create_database": "create_db",
@@ -204,14 +205,24 @@ def import_csv_view(request):
     # 1. SAVE COLUMN NAMES DEFINITION
     if request.method == "POST" and "edit_id" in request.POST:
         edit_id = request.POST.get("edit_id")
+        delimiter = request.POST.get("delimiter", ",")
+        valid_delimiters = [",", ";"]
+        if delimiter not in valid_delimiters:
+            delimiter = ","
+
         for csv_file in csv_list:
             if csv_file["id"] == edit_id:
                 csv_file["preferences"] = {
                     key: request.POST.get(key, "")
                     for key in ["title", "author", "publication_year", "doi", "country", "keywords", "citations"]
                 }
+                if csv_file.get("source") == "local":
+                    csv_file["separator"] = delimiter
+
                 break
+
         return save_session_and_redirect()
+
 
 
     # 2. DELETE FILE
@@ -406,16 +417,35 @@ def import_csv_view(request):
             return save_session_and_redirect()
 
      # 5.  SAVE PROJECT
-    if request.method == "POST" and "save_project" in request.POST:
-        save_current_project_state(request, step="import_csv")
-        return redirect("home")
-
     if request.method == "POST" and request.POST.get("finalize") == "1":
         # Save disabled articles
+
+
         disabled_raw = request.POST.get("disabled_rows", "")
         disabled_indices = set(int(x) for x in disabled_raw.split(",") if x.isdigit())
         request.session["disabled_indices"] = sorted(disabled_indices)
+
+        # ✅ Limpia separators antes de guardar mapping
+        for csv in csv_list:
+            if csv.get("source") == "local" and "separator" in csv:
+                clean = csv["separator"].strip('"').strip("'")
+                if clean not in [",", ";"]:
+                    clean = ","
+                csv["separator"] = clean
+        print("\n---- CSV_LIST BEFORE BUILDING SEPARATORS MAPPING ----")
+        for csv in csv_list:
+            print(csv)
+        request.session["csv_separators_by_file"] = {
+            csv["filename"].lower(): (
+                csv.get("separator", ",") if csv.get("source") == "local" else ","
+            )
+            for csv in csv_list
+        }
+        print("\n---- SEPARATORS_BY_FILE MAPPING ----")
+        for k, v in request.session["csv_separators_by_file"].items():
+            print(f"{k} => '{v}'")
         return redirect("review_import")
+
 
 
     context = {
@@ -425,8 +455,8 @@ def import_csv_view(request):
         "form": CSVUploadForm(),
         "scopus_form": ScopusSearchForm(),
         "csv_files": csv_list,
-        "column_fields": ["title", "author", "publication_year", "doi", "country", "keywords", "citations"],
-        "required_fields": ["title", "author", "publication_year", "doi", "keywords"],
+        "column_fields": ["delimiter","title", "author", "publication_year", "doi", "country", "keywords", "citations"],
+        "required_fields": ["delimiter", "title", "author", "publication_year", "doi", "keywords"],
 
     }
     return render(request, "akabat_app/import_csv.html", context)
@@ -555,7 +585,7 @@ def preferences_view(request):
 
     default_excluded_keywords = request.session.get("excluded_keywords", {
         "excluded_starting_by_keywords_at_csv_import": [],
-        "excluded_keywords_at_csv_import": [],
+        "excluded_keywords_at_csv_import": ["nan"],
         "excluded_contains_keywords_at_csv_import": [],
         "excluded_keywords_in_plot": [],
     })
@@ -619,6 +649,14 @@ def process_keywords_view(request):
         excluded_contains_keywords=excluded["excluded_contains_keywords_at_csv_import"]
         )
 
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "save":
+            save_current_project_state(request, step="process_keywords")
+            return redirect("home")
+        elif action == "next":
+            return redirect("/akabat/group_semantic/")
+        
     controller.generate_unique_keywords()
     unique = controller._data.unique_keywords
     project_folder = request.session["akabat_project_folder"]
@@ -693,6 +731,9 @@ def group_semantic_view(request):
     if request.method == "POST":
         action = request.POST.get("action")
         if action == "cluster":
+            groups_json = os.path.join(get_project_folder(request), "keyword_groups.json")
+            if os.path.exists(groups_json):
+                os.remove(groups_json)
             # User has clicked "Group Keywords"
             distance_threshold = request.POST.get("distance_threshold")
             selected_mode = request.POST.get("clustering_mode", "auto")
@@ -876,6 +917,7 @@ def cluster_authors_view(request):
                 except Exception:
                     continue
 
+            # ✅ SOLO guarda si hay clusters definidos
             if parsed:
                 controller._data.author_clusters = parsed
                 cluster_path = os.path.join(get_project_folder(request), "author_clusters.json")
@@ -884,7 +926,10 @@ def cluster_authors_view(request):
                 backup_path = cluster_path.replace(".json", "_backup.json")
                 with open(backup_path, "w", encoding="utf-8") as f:
                     json.dump(parsed, f, indent=2, ensure_ascii=False)
+
+            # ✅ SIEMPRE permite continuar
             return redirect("/akabat/create_db/")
+
     else:
         clusters = controller._data.author_clusters
 
@@ -1022,8 +1067,12 @@ def get_filter_options(request):
         excluded_contains_keywords=excluded["excluded_contains_keywords_at_csv_import"]
     )
     author_clusters_path = os.path.join(get_project_folder(request), "author_clusters.json")
-    with open(author_clusters_path, "r", encoding="utf-8") as f:
-        controller._data.author_clusters = json.load(f)
+    if os.path.exists(author_clusters_path):
+        with open(author_clusters_path, "r", encoding="utf-8") as f:
+            controller._data.author_clusters = json.load(f)
+    else:
+        controller._data.author_clusters = {}
+
     keyword_groups_path = os.path.join(get_project_folder(request), "keyword_groups.json")
     with open(keyword_groups_path, "r", encoding="utf-8") as f:
         controller._data.unique_keywords_groups = json.load(f)
@@ -1031,8 +1080,13 @@ def get_filter_options(request):
     raw_df = controller._raw_papers
     years = sorted(set(raw_df["publication_year"].dropna().astype(str)))
 
-    keyword_col = raw_df["keywords"].dropna().astype(str)
-    keywords = sorted({kw.strip() for kws in keyword_col for kw in kws.split(";") if kw.strip()})
+    unique_keywords_path = os.path.join(get_project_folder(request), "unique_keywords.json")
+    if os.path.exists(unique_keywords_path):
+        with open(unique_keywords_path, "r", encoding="utf-8") as f:
+            keywords = sorted(json.load(f))
+    else:
+        keywords = []
+
 
     author_col = raw_df["author"].dropna()
     authors = sorted({a.strip() for row in author_col for a in row.split(";") if a.strip()})
@@ -1055,6 +1109,7 @@ def load_plot_ajax(request, plot_name):
     current_step, total_steps = 8, 9
     csvs_folder = os.path.join(settings.MEDIA_ROOT, "temp_merge_csvs")
     controller = get_controller(request)
+
     controller._preferences.csv_import_column_mappings_by_file = {
         csv["filename"]: {
             k: k
@@ -1063,6 +1118,8 @@ def load_plot_ajax(request, plot_name):
         for csv in request.session.get("csvs", [])
     }
     controller.import_all_csvs(csvs_folder)
+
+
     included = request.session.get("included_keywords", {
         "included_starting_by_keywords": [],
         "included_keywords": [],
@@ -1077,6 +1134,7 @@ def load_plot_ajax(request, plot_name):
     controller._preferences.excluded_keywords_at_csv_import = excluded["excluded_keywords_at_csv_import"]
     controller._preferences.excluded_starting_by_keywords_at_csv_import = excluded["excluded_starting_by_keywords_at_csv_import"]
     controller._preferences.excluded_contains_keywords_at_csv_import = excluded.get("excluded_contains_keywords_at_csv_import", [])
+
     controller._raw_papers = controller._paper_loader.apply_keyword_exclusions(
         controller._raw_papers,
         included_keywords=included["included_keywords"],
@@ -1086,32 +1144,70 @@ def load_plot_ajax(request, plot_name):
         excluded_starting_by_keywords=excluded["excluded_starting_by_keywords_at_csv_import"],
         excluded_contains_keywords=excluded["excluded_contains_keywords_at_csv_import"]
     )
+
+
     author_clusters_path = os.path.join(get_project_folder(request), "author_clusters.json")
+    if os.path.exists(author_clusters_path):
+        try:
+            with open(author_clusters_path, "r", encoding="utf-8") as f:
+                controller._data.author_clusters = json.load(f)
+        except json.JSONDecodeError as e:
+            print("[ERROR] JSON decode error in author_clusters.json:", e)
+            controller._data.author_clusters = {}
+    else:
+        print("[WARNING] author_clusters.json not found. Using empty.")
+        controller._data.author_clusters = {}
+
+
+    keyword_groups_path = os.path.join(get_project_folder(request), "keyword_groups.json")
+    if os.path.exists(keyword_groups_path):
+        try:
+            with open(keyword_groups_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    controller._data.unique_keywords_groups = data
+                else:
+                    print("[WARNING] keyword_groups.json is not a dict. Using empty.")
+                    controller._data.unique_keywords_groups = {}
+        except json.JSONDecodeError as e:
+            print("[ERROR] JSON decode error in keyword_groups.json:", e)
+            controller._data.unique_keywords_groups = {}
+    else:
+        print("[WARNING] keyword_groups.json not found. Using empty.")
+        controller._data.unique_keywords_groups = {}
+
     threshold = float(request.GET.get("threshold", 0))
     top_n = int(request.GET.get("top_n", 0)) or None
     min_freq = int(request.GET.get("min_freq", 0))
+
     filters = {
         "years": request.GET.get("years", "").split(",") if request.GET.get("years") else [],
         "keywords": request.GET.get("keywords", "").split(",") if request.GET.get("keywords") else [],
         "keyword_groups": request.GET.get("keyword_groups", "").split(",") if request.GET.get("keyword_groups") else [],
         "authors": request.GET.get("authors", "").split(",") if request.GET.get("authors") else [],
         "author_groups": request.GET.get("author_groups", "").split(",") if request.GET.get("author_groups") else [],
-        "showlegend": request.GET.get("showlegend", "1") == "1"
+        "showlegend": request.GET.get("showlegend", "1") == "1",
+        "layout": request.GET.get("layout", "spring")
     }
-    with open(author_clusters_path, "r", encoding="utf-8") as f:
-        controller._data.author_clusters = json.load(f)
+    # Clean empty strings from filter lists
+    for key in ["years", "keywords", "keyword_groups", "authors", "author_groups"]:
+        filters[key] = [val for val in filters[key] if val.strip()]
+    print("[DEBUG] Filters received:", filters)
     try:
         fig_dict = controller.generate_single_plot(
             plot_name,
             threshold=threshold,
             top_n=top_n,
             min_freq=min_freq,
-            filters=filters  
+            filters=filters
         )
     except ValueError as e:
         return JsonResponse({"error": str(e)}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": "Internal server error"}, status=500)
 
     return JsonResponse(fig_dict, encoder=PlotlyJSONEncoder)
+
 
 
 def plots_view(request):
@@ -1150,8 +1246,12 @@ def plots_view(request):
         excluded_contains_keywords=excluded["excluded_contains_keywords_at_csv_import"]
     )
     author_clusters_path = os.path.join(get_project_folder(request), "author_clusters.json")
-    with open(author_clusters_path, "r", encoding="utf-8") as f:
-        controller._data.author_clusters = json.load(f)
+    if os.path.exists(author_clusters_path):
+        with open(author_clusters_path, "r", encoding="utf-8") as f:
+            controller._data.author_clusters = json.load(f)
+    else:
+        controller._data.author_clusters = {}
+
 
     graph_definitions = [
         ("polar", "Yearly Distribution of Articles by Category", "time",
@@ -1199,8 +1299,88 @@ def plots_view(request):
         "back_url": "/akabat/create_db/",
         "next_url": "/akabat/save_project/"
     }
+    request.session['cached_raw_papers'] = controller._raw_papers.to_json()
+
     return render(request, "akabat_app/wizard_plots.html", context)
 
+
+@require_GET
+def save_plot(request):
+    controller = get_controller(request)
+    if 'cached_raw_papers' in request.session:
+        controller._raw_papers = pd.read_json(request.session['cached_raw_papers'])
+    else:
+        return HttpResponse(
+            "Error: No data is loaded in memory. Please load and filter your data before exporting.",
+            status=400
+        )
+
+    if controller._raw_papers is None or controller._raw_papers.empty:
+        return HttpResponse(
+            "Error: No data is loaded in memory. Please load and filter your data before exporting.",
+            status=400
+        )
+
+    author_clusters_path = os.path.join(get_project_folder(request), "author_clusters.json")
+    if os.path.exists(author_clusters_path):
+        with open(author_clusters_path, "r", encoding="utf-8") as f:
+            controller._data.author_clusters = json.load(f)
+    else:
+        controller._data.author_clusters = {}
+
+    graph = request.GET.get("graph")
+    format = request.GET.get("format", "png")
+    width = int(request.GET.get("width", 1100))
+    height = int(request.GET.get("height", 650))
+
+    threshold = float(request.GET.get("threshold", 0))
+    top_n = int(request.GET.get("top_n", 0)) or None
+    min_freq = int(request.GET.get("min_freq", 0))
+
+    filters = {
+        "years": request.GET.get("years", "").split(",") if request.GET.get("years") else [],
+        "keywords": request.GET.get("keywords", "").split(",") if request.GET.get("keywords") else [],
+        "keyword_groups": request.GET.get("keyword_groups", "").split(",") if request.GET.get("keyword_groups") else [],
+        "authors": request.GET.get("authors", "").split(",") if request.GET.get("authors") else [],
+        "author_groups": request.GET.get("author_groups", "").split(",") if request.GET.get("author_groups") else [],
+        "layout": request.GET.get("layout", "spring"),
+    }
+
+    fig = controller.generate_single_plot(
+        graph,
+        threshold=threshold,
+        top_n=top_n,
+        min_freq=min_freq,
+        filters=filters,
+        width=width,
+        height=height,
+        return_figure=True 
+    )
+
+    buf = io.BytesIO()
+    if format == "pdf":
+        fig.write_image(buf, format="pdf", width=width, height=height)
+        content_type = "application/pdf"
+        filename = f"{graph}.pdf"
+    elif format == "svg":
+        fig.write_image(buf, format="svg", width=width, height=height)
+        content_type = "image/svg+xml"
+        filename = f"{graph}.svg"
+    elif format == "gif":
+        html_content = fig.to_html()
+        buf.write(html_content.encode('utf-8'))
+        content_type = "text/html"
+        filename = f"{graph}.html"
+    else:
+        fig.write_image(buf, format="png", width=width, height=height)
+        content_type = "image/png"
+        filename = f"{graph}.png"
+
+
+    buf.seek(0)
+    response = HttpResponse(buf, content_type=content_type)
+    response["Content-Disposition"] = f"attachment; filename={filename}"
+    return response
 
 def end_view(request):
     return render(request, "akabat_app/end.html")

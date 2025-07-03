@@ -36,12 +36,13 @@ class Controller:
         self._kill_akabat: bool = False
 
     def import_all_csvs(self, folder_path: str = None, disabled_indices: set[int] = None) -> int:
+        separators_by_file = self._preferences.csv_separators_by_file
         csvs: list[pd.DataFrame] = self._paper_loader.import_csvs(
             folder_path=folder_path,
             import_column_mappings_by_file=self._preferences.csv_import_column_mappings_by_file,
+            separators_by_file=separators_by_file,
         )
         merged = pd.concat(csvs, ignore_index=True)
-
         if self._raw_papers is not None and not self._raw_papers.empty:
             csvs.append(self._raw_papers)
 
@@ -203,40 +204,66 @@ class Controller:
         )
         return self._data.author_clusters, self._data.removed_keywords, self._data.cluster_quality_score
 
-    def generate_single_plot(self, plot_name: str, threshold=0, top_n=None, min_freq=None, filters=None) -> go.Figure:
+
+
+
+
+    def get_filtered_raw_papers(self, filters):
+        df = self._raw_papers.copy()
+
+        # Filtro por años
+        if filters.get("years"):
+            df = df[df["publication_year"].astype(str).isin(filters["years"])]
+
+        # Filtro por authors
+        if filters.get("authors"):
+            df = df[df["author"].apply(
+                lambda a: any(auth in a for auth in filters["authors"]) if isinstance(a, str) else False
+            )]
+
+        # Filtro por keywords
+        if filters.get("keywords"):
+            df = df[df["keywords"].apply(
+                lambda kw: any(k in kw for k in filters["keywords"]) if isinstance(kw, str) else False
+            )]
+
+        # Filtro por keyword_groups
+        if filters.get("keyword_groups"):
+            # Obtener todas las keywords asociadas a esos grupos
+            group_dict = self._data.unique_keywords_groups
+            keywords_from_groups = set(
+                kw for g in filters["keyword_groups"] for kw in group_dict.get(g, [])
+            )
+            if keywords_from_groups:
+                df = df[df["keywords"].apply(
+                    lambda kw: any(k in kw for k in keywords_from_groups) if isinstance(kw, str) else False
+                )]
+
+        return df
+    
+    def generate_single_plot(
+        self, plot_name: str, threshold=0, top_n=None, min_freq=None,
+        filters=None, width=1100, height=650, return_figure=False
+    ) -> go.Figure:
         project_folder = self._preferences.output_files_folder
         plots_folder = os.path.join(project_folder, self._preferences.plot_folder)
         os.makedirs(plots_folder, exist_ok=True)
-        raw_df = self._raw_papers
+
+        # 1️⃣ Filtrar el DataFrame crudo
+        raw_df = self.get_filtered_raw_papers(filters)
+        print("[DEBUG] Rows after filtering:", len(raw_df))
+
+        if raw_df.empty or 'publication_year' not in raw_df.columns or 'keywords' not in raw_df.columns:
+            raise ValueError("No data available after applying filters or missing required columns.")
+
+        # 2️⃣ Mapas para autores y keywords
         author_kw_map = self._cluster_authors.build_author_keyword_map(raw_df)
         author_clusters = self._data.author_clusters
         with open(os.path.join(project_folder, "keyword_groups.json"), "r", encoding="utf-8") as f:
             groups_named = json.load(f)
         filters = filters or {}
-        # === Global filters ===
-        if filters.get("years"):
-            raw_df = raw_df[raw_df["publication_year"].astype(str).isin(filters["years"])]
 
-        if filters.get("keywords"):
-            raw_df = raw_df[raw_df["keywords"].apply(lambda kw: any(k in kw for k in filters["keywords"]) if isinstance(kw, str) else False)]
-
-        if filters.get("keyword_groups"):
-            group_dict = self._data.unique_keywords_groups  
-            all_keywords_from_groups = set(
-                kw for g in filters["keyword_groups"] for kw in group_dict.get(g, [])
-            )
-            raw_df = raw_df[raw_df["keywords"].apply(lambda kw: any(k in kw for k in all_keywords_from_groups) if isinstance(kw, str) else False)]
-
-        if filters.get("authors"):
-            raw_df = raw_df[raw_df["author"].apply(lambda a: any(auth in a for auth in filters["authors"]) if isinstance(a, str) else False)]
-
-        if filters.get("author_groups"):
-            author_group_dict = self._data.author_clusters  
-            all_authors_from_groups = set(
-                a for g in filters["author_groups"] for a in author_group_dict.get(g, {}).get("authors", [])
-            )
-            raw_df = raw_df[raw_df["author"].apply(lambda a: any(auth in a for auth in all_authors_from_groups) if isinstance(a, str) else False)]
-
+        # 3️⃣ Mapa de citas por autor
         author_citations_map = defaultdict(int)
         for row in raw_df.itertuples(index=False):
             authors_str = getattr(row, "author", "") or getattr(row, "Author", "")
@@ -244,222 +271,112 @@ class Controller:
             authors = [a.strip() for a in authors_str.split(";") if a.strip()]
             for author in authors:
                 author_citations_map[author] += citations
-        df_all = self._db_handler.query_count_unique_papers_per_group_per_year()
-        selected_categories = [str(x) for x in df_all["name"].unique()]
-        selected_years = [col.split("_")[-1] for col in df_all.columns if col.startswith("paper_count_")]
 
+        # 4️⃣ Obtener datos de la BD ya agregados por grupo y año
+        df_all = self._db_handler.query_count_unique_papers_per_group_per_year()
+        df_all = df_all.rename(columns={"name": "Category"})
+        print("[DEBUG] Columns in df_all:", df_all.columns)
+
+        # 5️⃣ Seleccionar categorías y años válidos
+        selected_categories = df_all["Category"].unique().tolist()
+        selected_years = [col for col in df_all.columns if col.isdigit()]
+
+        print("[DEBUG] Categories:", selected_categories)
+        print("[DEBUG] Years:", selected_years)
+
+        # 6️⃣ Convertir a formato tidy
         df = self._plot_generator.get_filtered_melted_df(
             controller=self,
             category_column_name="Category",
             selected_category_names=selected_categories,
-            discard_years=[y for y in df_all.columns if y.endswith(tuple(set(selected_years) ^ set(all_years := [col.split("_")[-1] for col in df_all.columns if col.startswith("paper_count_")])))],
+            discard_years=[]
         )
 
+        # 7️⃣ Enrutar según el tipo de gráfico
         match plot_name:
             case "polar":
-                fig = self._plot_generator.plot_polar(df, "Category", plots_folder, "polar.pdf", groups_named)
-
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": [],
-                    "config": {"responsive": True}
-                }
-
+                fig = self._plot_generator.plot_polar(
+                    df, "Category", plots_folder, "polar.pdf", groups_named,
+                    width=width, height=height
+                )
             case "lines":
-                fig = self._plot_generator.plot_lines(df, "Category", plots_folder, "lines.pdf")
-
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": [], 
-                    "config": {"responsive": True}
-                }
-
+                fig = self._plot_generator.plot_lines(
+                    df, "Category", plots_folder, "lines.pdf",
+                    width=width, height=height
+                )
             case "log":
-                fig = self._plot_generator.plot_log_lines(df, "Category", plots_folder, "growth.pdf")
-
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": [],
-                    "config": {"responsive": True}
-                }
-
+                fig = self._plot_generator.plot_log_lines(
+                    df, "Category", plots_folder, "growth.pdf",
+                    width=width, height=height
+                )
             case "map":
                 fig = self._plot_generator.generate_interactive_country_map(
-                    raw_df, os.path.join(plots_folder, "country_map.pdf")
+                    raw_df, os.path.join(plots_folder, "country_map.pdf"),
+                    width=width, height=height
                 )
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-                frames = []
-                if hasattr(fig, "frames") and fig.frames:
-                    try:
-                        frames = [f.to_plotly_json() for f in fig.frames]
-                    except Exception as e:
-                        print("Error al convertir frames:", e)
-
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": frames,
-                    "config": {"responsive": True}
-                }
-
-
             case "author_cluster":
                 fig = self._plot_generator.generate_interactive_author_cluster_graph(
                     author_clusters=author_clusters,
                     author_citations_map=author_citations_map,
                     save_path_html=os.path.join(plots_folder, "author_clusters.pdf"),
-                    threshold=threshold
+                    threshold=threshold,
+                    layout=filters.get("layout", "spring"),
+                    width=width, height=height
                 )
-
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-                print("[DEBUG] Threshold aplicado:", threshold)
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": [],
-                    "config": {"responsive": True}
-                }
-
             case "bubble":
                 fig = self._plot_generator.generate_top_keywords_bubble_chart(
                     author_clusters=author_clusters,
                     author_kw_map=author_kw_map,
-                    top_n=top_n
+                    top_n=top_n,
+                    width=width, height=height
                 )
-
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": [],
-                    "config": {"responsive": True}
-                }
-
-
             case "cumulative_publications":
-                fig = self._plot_generator.generate_cumulative_country_map(self._raw_papers)
-
-                # Layout with showlegend
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-                frames = []
-                if hasattr(fig, "frames") and fig.frames:
-                    try:
-                        frames = [f.to_plotly_json() for f in fig.frames]
-                    except Exception as e:
-                        print("Error al convertir frames:", e)
-                gif_path = os.path.join(plots_folder, "cumulative_publications.gif") #export gif
-                self._plot_generator.export_plotly_animation_as_gif(fig, gif_path, fps=3)
-
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": frames,
-                    "config": {"responsive": True}
-                }
-
-
+                fig = self._plot_generator.generate_cumulative_country_map(
+                    raw_df, width=width, height=height
+                )
             case "heatmap":
                 fig = self._plot_generator.generate_interactive_author_keyword_heatmap(
-                    author_clusters,
-                    author_kw_map,
+                    author_clusters, author_kw_map,
                     save_path_html=os.path.join(plots_folder, "author_keyword_heatmap.pdf"),
-                    min_freq=min_freq
+                    min_freq=min_freq, width=width, height=height
                 )
-
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": [],
-                    "config": {"responsive": True}
-                }
-
             case "impact_map":
-                fig = self._plot_generator.generate_citation_heatmap_by_country(self._raw_papers)
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-                frames = []
-                if hasattr(fig, "frames") and fig.frames:
-                    try:
-                        frames = [f.to_plotly_json() for f in fig.frames]
-                    except Exception as e:
-                        print("Error al convertir frames (impact_map):", e)
-                gif_path = os.path.join(plots_folder, "citation_map.gif")
-                self._plot_generator.export_plotly_animation_as_gif(fig, gif_path, fps=3)
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": frames,
-                    "config": {"responsive": True}
-                }
-
+                fig = self._plot_generator.generate_citation_heatmap_by_country(
+                    raw_df, width=width, height=height
+                )
             case "cumulative_citations":
-                fig = self._plot_generator.generate_cumulative_citation_map_by_country(self._raw_papers)
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-                frames = []
-                if hasattr(fig, "frames") and fig.frames:
-                    try:
-                        frames = [f.to_plotly_json() for f in fig.frames]
-                    except Exception as e:
-                        print("Error al convertir frames (cumulative_citations):", e)
-                gif_path = os.path.join(plots_folder, "cumulative_citations.gif")
-                self._plot_generator.export_plotly_animation_as_gif(fig, gif_path, fps=3)
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": frames,
-                    "config": {"responsive": True}
-                }
-
+                fig = self._plot_generator.generate_cumulative_citation_map_by_country(
+                    raw_df, width=width, height=height
+                )
             case "coauthors":
                 fig = self._plot_generator.generate_interactive_coauthorship_graph(
                     raw_df,
                     os.path.join(plots_folder, "coauthors.pdf"),
-                    threshold=threshold
+                    threshold=threshold,
+                    layout=filters.get("layout", "spring"),
+                    width=width, height=height
                 )
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": [],
-                    "config": {"responsive": True}
-                }
-
             case "polar_comparison":
                 fig = self._plot_generator.generate_polar_comparison_graph_split_years(
                     raw_df,
                     db_handler=self._db_handler,
-                    cluster_keywords=groups_named
+                    cluster_keywords=groups_named,
+                    width=width, height=height
                 )
-                layout_dict = fig.layout.to_plotly_json()
-                layout_dict["showlegend"] = filters.get("showlegend", True)
-                return {
-                    "data": [trace.to_plotly_json() for trace in fig.data],
-                    "layout": layout_dict,
-                    "frames": [],
-                    "config": {"responsive": True}
-                }
-
             case _:
                 raise ValueError(f"Unknown plot name: {plot_name}")
+
+        # 8️⃣ Construir respuesta JSON
+        layout_dict = fig.layout.to_plotly_json()
+        layout_dict["showlegend"] = filters.get("showlegend", True)
+
+        if return_figure:
+            return fig
+
+        return {
+            "data": [trace.to_plotly_json() for trace in fig.data],
+            "layout": layout_dict,
+            "frames": getattr(fig, "frames", []),
+            "config": {"responsive": True}
+        }
+

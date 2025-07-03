@@ -16,7 +16,7 @@
     <!-- Clustering options -->
     <div class="form-check form-switch mb-3">
       <input class="form-check-input" type="checkbox" id="useDefaults" checked>
-      <label class="form-check-label" for="useDefaults">Use default clustering parameters - Distance: Ward, Affinity: Euclidean, distance: None</label>
+      <label class="form-check-label" for="useDefaults">Use default clustering parameters</label>
     </div>
 
     <div class="form-check mb-2">
@@ -29,7 +29,7 @@
     </div>
 
     <div class="mb-3">
-      <label for="num_clusters" class="form-label">Number of clusters (max {{ max_clusters }} )</label>
+      <label for="num_clusters" class="form-label">Number of clusters (max {{ max_clusters }})</label>
       <input type="number" class="form-control" id="num_clusters" name="num_clusters" min="2" max="{{ max_clusters }}" value="{% if selected_mode == 'manual' %}{{ selected_k }}{% endif %}" {% if selected_mode != "manual" %}disabled placeholder="—"{% endif %}>
     </div>
 
@@ -118,6 +118,12 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body fs-6">
+        <p><strong>⚙️ What are the default parameters?</strong></p>
+        <ul>
+          <li><strong>Clustering method:</strong> Agglomerative with <code>Ward</code> linkage.</li>
+          <li><strong>Affinity:</strong> Euclidean distance.</li>
+          <li><strong>Distance threshold:</strong> None.</li>
+        </ul>
         <p><strong>🧠 What does “disable group” mean?</strong></p>
         <ul>
           <li>Clicking the <strong>❌</strong> icon will mark a group as <em>disabled</em>.</li>
