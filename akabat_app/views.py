@@ -1092,7 +1092,11 @@ def get_filter_options(request):
     authors = sorted({a.strip() for row in author_col for a in row.split(";") if a.strip()})
 
     keyword_group_names = list(controller._data.unique_keywords_groups.keys())
-    author_group_names = list(controller._data.author_clusters.keys())
+    author_group_names = [
+        name for name, data in controller._data.author_clusters.items()
+        if not data.get("disabled", False)
+    ]
+
 
     return JsonResponse({
         "years": years,

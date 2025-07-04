@@ -167,7 +167,6 @@
   <div class="mt-4 text-end">
     <button class="btn btn-primary d-flex align-items-center gap-2" id="apply-filters">
       <span>Apply Filters</span>
-      <span id="apply-filters-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
     </button>
 
   </div>
@@ -269,13 +268,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const graphName = activeBtn.dataset.graphName;
 
-    // ✔️ Mostrar spinner en botón
-    document.getElementById("apply-filters-spinner").classList.remove("d-none");
 
-    // ✔️ Llamar a reload y ocultar spinner al terminar
+  
     reloadGraph(graphName)
       .finally(() => {
-        document.getElementById("apply-filters-spinner").classList.add("d-none");
       });
   });
 

@@ -56,6 +56,8 @@ class PlotGenerator:
         df = PlotGenerator.get_filtered_df(controller=controller, category_column_name=category_column_name, selected_category_names=selected_category_names, discard_years=discard_years)
         df = df.drop('total_paper_count', axis=1)
         df_melted = pd.melt(df, id_vars=[category_column_name], var_name='year', value_name='count')
+        print("[DEBUG] Melted DF shape:", df_melted.shape)
+        print("[DEBUG] Melted DF head:\n", df_melted.head())
         return df_melted
     
     @staticmethod
@@ -448,12 +450,14 @@ class PlotGenerator:
         self,
         author_clusters: dict,
         author_citations_map: dict,
+        active_authors: set,
         save_path_html: str = None,
         threshold: float = 0.0,
         layout: str = "spring",
         width: int = 1100,
         height: int = 650
     ) -> go.Figure:
+
         import heapq
 
         G = nx.Graph()
@@ -463,14 +467,16 @@ class PlotGenerator:
 
         # Build graph
         for cluster_name, data in author_clusters.items():
-            for author in data["authors"]:
+            filtered_authors = [a for a in data["authors"] if a in active_authors]
+            for author in filtered_authors:
                 G.add_node(author)
                 cluster_labels[author] = cluster_name
                 author_papers[author] = author_papers.get(author, 0) + 1
                 author_citations[author] = author_citations_map.get(author, 0)
-            for i in range(len(data["authors"])):
-                for j in range(i + 1, len(data["authors"])):
-                    G.add_edge(data["authors"][i], data["authors"][j])
+            for i in range(len(filtered_authors)):
+                for j in range(i + 1, len(filtered_authors)):
+                    G.add_edge(filtered_authors[i], filtered_authors[j])
+
 
         # Calculate max after calculated dict
         max_articles = max(author_papers.values(), default=1)

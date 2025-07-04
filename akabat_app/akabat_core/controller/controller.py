@@ -205,42 +205,154 @@ class Controller:
         return self._data.author_clusters, self._data.removed_keywords, self._data.cluster_quality_score
 
 
+    def count_unique_papers_per_group_per_year_from_raw(self, raw_df):
+
+        df = raw_df.copy()
+        if "paper_id" not in df.columns:
+            df["paper_id"] = df.reset_index().index.astype(str)
+
+        group_dict = self._data.unique_keywords_groups
+
+        def map_to_group(keywords):
+            if not isinstance(keywords, list):
+                return None
+            for group, group_data in group_dict.items():
+                if not group_data.get("enabled", True):
+                    continue
+                kws = group_data.get("keywords", [])
+                if any(
+                    any(group_kw.lower() in kw.lower() or kw.lower() in group_kw.lower() 
+                        for kw in keywords) 
+                    for group_kw in kws
+                ):
+                    return group
+            return None
+
+
+        df["Category"] = df["keywords"].apply(map_to_group)
+        print(df["Category"].value_counts(dropna=False))
+
+        if df["Category"].isna().all():
+            raise ValueError("No data available after mapping to groups. Revisa los nombres y la lógica de coincidencia.")
+        df = df.dropna(subset=["Category"])
+
+        if df.empty:
+            raise ValueError("No data available after mapping to groups.")
+
+        df = df[["Category", "publication_year", "paper_id"]].drop_duplicates()
+
+        grouped = df.groupby(["Category", "publication_year"])["paper_id"].nunique().reset_index(name="count")
+
+        if grouped.empty:
+            raise ValueError("No data available after grouping.")
+
+        pivot = grouped.pivot(index="Category", columns="publication_year", values="count").fillna(0).astype(int)
+        pivot["total_paper_count"] = pivot.sum(axis=1)
+        pivot = pivot.reset_index().rename(columns={"Category": "name"})
+        pivot = pivot.sort_values("total_paper_count", ascending=False).reset_index(drop=True)
+
+        return pivot
+    
+    def load_author_clusters(self) -> bool:
+        author_clusters_path = os.path.join(self._preferences.output_files_folder, "author_clusters.json")
+        if not os.path.exists(author_clusters_path):
+            return False
+
+        with open(author_clusters_path, "r", encoding="utf-8") as f:
+            loaded_data = json.load(f)
+
+        enabled_clusters = {
+            name: data
+            for name, data in loaded_data.items()
+            if not data.get("disabled", False)
+        }
+
+        self._data.author_clusters = enabled_clusters
+        return True
 
 
 
     def get_filtered_raw_papers(self, filters):
+
         df = self._raw_papers.copy()
+        years = filters.get("years")
+        if years:
+            years = [int(y) for y in years]  
+            before = len(df)
+            df = df[df["publication_year"].isin(years)]
+            after = len(df)
 
-        # Filtro por años
-        if filters.get("years"):
-            df = df[df["publication_year"].astype(str).isin(filters["years"])]
 
-        # Filtro por authors
-        if filters.get("authors"):
-            df = df[df["author"].apply(
-                lambda a: any(auth in a for auth in filters["authors"]) if isinstance(a, str) else False
-            )]
+        author_groups = filters.get("author_groups")
+        if author_groups:
+            group_dict = self._data.author_clusters
 
-        # Filtro por keywords
-        if filters.get("keywords"):
-            df = df[df["keywords"].apply(
-                lambda kw: any(k in kw for k in filters["keywords"]) if isinstance(kw, str) else False
-            )]
 
-        # Filtro por keyword_groups
-        if filters.get("keyword_groups"):
-            # Obtener todas las keywords asociadas a esos grupos
-            group_dict = self._data.unique_keywords_groups
-            keywords_from_groups = set(
-                kw for g in filters["keyword_groups"] for kw in group_dict.get(g, [])
+            author_to_group = {}
+            for group in author_groups:
+                authors_in_group = group_dict.get(group, {}).get("authors", [])
+                for author in authors_in_group:
+                    author_to_group[author] = group
+
+            def assign_group(author_str):
+                if not isinstance(author_str, str):
+                    return None
+                for author in author_str.split(";"):
+                    author = author.strip()
+                    if author in author_to_group:
+                        return author_to_group[author]
+                return None
+
+            df["AssignedAuthorGroup"] = df["author"].apply(assign_group)
+            before = len(df)
+            df = df.dropna(subset=["AssignedAuthorGroup"]).copy()
+            after = len(df)
+
+
+            def keep_only_assigned_author_group(author_str, assigned_group):
+                if not isinstance(author_str, str):
+                    return ""
+                valid_authors = [
+                    a.strip() for a in author_str.split(";")
+                    if author_to_group.get(a.strip()) == assigned_group
+                ]
+                return ";".join(valid_authors)
+
+            df["author"] = df.apply(
+                lambda row: keep_only_assigned_author_group(row["author"], row["AssignedAuthorGroup"]),
+                axis=1
             )
-            if keywords_from_groups:
-                df = df[df["keywords"].apply(
-                    lambda kw: any(k in kw for k in keywords_from_groups) if isinstance(kw, str) else False
-                )]
+
+
+        keywords = filters.get("keywords")
+        if keywords:
+            df = df[df["keywords"].apply(
+                lambda kw_list: any(k in kw_list for k in keywords) if isinstance(kw_list, list) else False
+            )]
+
+        keyword_groups = filters.get("keyword_groups")
+        if keyword_groups:
+            group_dict = self._data.unique_keywords_groups
+            selected_keywords = set()
+            for g in keyword_groups:
+                selected_keywords.update(group_dict.get(g, {}).get("keywords", []))
+            
+            def paper_has_group_keyword(kw_list):
+                if not isinstance(kw_list, list):
+                    return False
+                return any(kw in selected_keywords for kw in kw_list)
+
+            df = df[df["keywords"].apply(paper_has_group_keyword)]
+
+            def keep_only_selected(kw_list):
+                if not isinstance(kw_list, list):
+                    return []
+                return [kw for kw in kw_list if kw in selected_keywords]
+            df["keywords"] = df["keywords"].apply(keep_only_selected)
 
         return df
-    
+
+
     def generate_single_plot(
         self, plot_name: str, threshold=0, top_n=None, min_freq=None,
         filters=None, width=1100, height=650, return_figure=False
@@ -249,21 +361,20 @@ class Controller:
         plots_folder = os.path.join(project_folder, self._preferences.plot_folder)
         os.makedirs(plots_folder, exist_ok=True)
 
-        # 1️⃣ Filtrar el DataFrame crudo
+
         raw_df = self.get_filtered_raw_papers(filters)
-        print("[DEBUG] Rows after filtering:", len(raw_df))
 
         if raw_df.empty or 'publication_year' not in raw_df.columns or 'keywords' not in raw_df.columns:
             raise ValueError("No data available after applying filters or missing required columns.")
 
-        # 2️⃣ Mapas para autores y keywords
+ 
         author_kw_map = self._cluster_authors.build_author_keyword_map(raw_df)
         author_clusters = self._data.author_clusters
         with open(os.path.join(project_folder, "keyword_groups.json"), "r", encoding="utf-8") as f:
             groups_named = json.load(f)
+        self._data.unique_keywords_groups = groups_named
         filters = filters or {}
 
-        # 3️⃣ Mapa de citas por autor
         author_citations_map = defaultdict(int)
         for row in raw_df.itertuples(index=False):
             authors_str = getattr(row, "author", "") or getattr(row, "Author", "")
@@ -272,19 +383,19 @@ class Controller:
             for author in authors:
                 author_citations_map[author] += citations
 
-        # 4️⃣ Obtener datos de la BD ya agregados por grupo y año
-        df_all = self._db_handler.query_count_unique_papers_per_group_per_year()
+        df_all = self.count_unique_papers_per_group_per_year_from_raw(raw_df)
         df_all = df_all.rename(columns={"name": "Category"})
-        print("[DEBUG] Columns in df_all:", df_all.columns)
 
-        # 5️⃣ Seleccionar categorías y años válidos
         selected_categories = df_all["Category"].unique().tolist()
-        selected_years = [col for col in df_all.columns if col.isdigit()]
+        selected_years = [col for col in df_all.columns if isinstance(col, int)]
 
-        print("[DEBUG] Categories:", selected_categories)
-        print("[DEBUG] Years:", selected_years)
+ 
+        df_all.columns = [str(c) for c in df_all.columns]
+        if filters.get('years'):
+            year_columns = [str(y) for y in filters['years']]
+            df_all = df_all[['Category', 'total_paper_count'] + year_columns]
 
-        # 6️⃣ Convertir a formato tidy
+
         df = self._plot_generator.get_filtered_melted_df(
             controller=self,
             category_column_name="Category",
@@ -292,7 +403,17 @@ class Controller:
             discard_years=[]
         )
 
-        # 7️⃣ Enrutar según el tipo de gráfico
+
+        active_authors = set()
+        for authors_str in raw_df["author"].dropna():
+            for author in authors_str.split(";"):
+                author = author.strip()
+                if author:
+                    active_authors.add(author)
+
+        print(df.head())
+
+
         match plot_name:
             case "polar":
                 fig = self._plot_generator.plot_polar(
@@ -318,6 +439,7 @@ class Controller:
                 fig = self._plot_generator.generate_interactive_author_cluster_graph(
                     author_clusters=author_clusters,
                     author_citations_map=author_citations_map,
+                    active_authors=active_authors,
                     save_path_html=os.path.join(plots_folder, "author_clusters.pdf"),
                     threshold=threshold,
                     layout=filters.get("layout", "spring"),
@@ -366,7 +488,6 @@ class Controller:
             case _:
                 raise ValueError(f"Unknown plot name: {plot_name}")
 
-        # 8️⃣ Construir respuesta JSON
         layout_dict = fig.layout.to_plotly_json()
         layout_dict["showlegend"] = filters.get("showlegend", True)
 
